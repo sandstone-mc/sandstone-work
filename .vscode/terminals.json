@@ -1,0 +1,23 @@
+{
+  "autorun": true,
+  "terminals": [
+    {
+      "name": "root",
+      "icon": "folder-library",
+      "color": "terminal.ansiYellow",
+      "onlyMultiple": true,
+      "focus": true
+    },
+    {
+      "name": "claude",
+      "icon": "comment-discussion",
+      "color": "terminal.ansiGreen",
+      "onlyMultiple": true,
+      "commands": [
+        "$env:VSCODE_PID=\"\"; $env:VSCODE_CWD=\"\"; $env:TERM_PROGRAM=\"\"; clear && claude"
+      ],
+      "execute": false,
+      "focus": false
+    }
+  ]
+}

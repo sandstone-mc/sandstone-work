@@ -1,0 +1,10 @@
+node_modules/
+
+mcdoc-ts-generator/
+sandstone/
+sandstone-build/
+sandstone-cli/
+sandstone-documentation/
+sandstone-libraries/
+sandstone-playground/
+sandstone-template/

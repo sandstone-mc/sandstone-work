@@ -1,0 +1,41 @@
+{
+	"folders": [
+		{
+			"name": "work",
+			"path": "./"
+		},
+		{
+			"name": "sandstone",
+			"path": "sandstone"
+		},
+		{
+			"name": "mcdoc-ts-generator",
+			"path": "mcdoc-ts-generator"
+		},
+		{
+			"name": "build",
+			"path": "sandstone-build"
+		},
+		{
+			"name": "cli",
+			"path": "sandstone-cli"
+		},
+		{
+			"name": "documentation",
+			"path": "sandstone-documentation"
+		},
+		{
+			"name": "libraries",
+			"path": "sandstone-libraries"
+		},
+		{
+			"name": "playground",
+			"path": "sandstone-playground"
+		},
+		{
+			"name": "template",
+			"path": "sandstone-template"
+		}
+	],
+	"settings": {}
+}

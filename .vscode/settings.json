@@ -1,0 +1,15 @@
+{
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+
+    "mcdoc-ts-generator": true,
+    "sandstone": true,
+    "sandstone-build": true,
+    "sandstone-cli": true,
+    "sandstone-documentation": true,
+    "sandstone-libraries": true,
+    "sandstone-playground": true,
+    "sandstone-template": true
+  }
+}
