@@ -148,6 +148,11 @@ async function setup() {
     console.log('Updated manifest.contribute.json\n')
   }
 
+  if (!contributeModified && (contribute['git-user'] !== 'sandstone-mc' || contribute['only-repos'] || contribute['skip-repos'].length !== 0)) {
+    // from this point on the variable tells the CLI to not modify the workspace nor gitignore
+    contributeModified = true
+  }
+
   const gitUser = contribute['git-user']
 
   // Step 1: Git pull in root
@@ -165,28 +170,32 @@ async function setup() {
   }
 
   // Step 2: Update .gitignore
-  console.log('Updating .gitignore...')
-  const gitignoreLines = ['manifest.contribute.json', '', 'node_modules/', '']
-  for (const { folderName } of reposToProcess) {
-    gitignoreLines.push(`${folderName}/`)
+  if (!contributeModified) {
+    console.log('Updating .gitignore...')
+    const gitignoreLines = ['manifest.contribute.json', '', 'node_modules/', '']
+    for (const { folderName } of reposToProcess) {
+      gitignoreLines.push(`${folderName}/`)
+    }
+    await Bun.write(join(rootDir, '.gitignore'), gitignoreLines.join('\n') + '\n')
+    console.log('')
   }
-  await Bun.write(join(rootDir, '.gitignore'), gitignoreLines.join('\n') + '\n')
-  console.log('')
 
   // Step 3: Update VS Code workspace
-  console.log('Updating sandstone.code-workspace...')
-  const workspace: Workspace = {
-    folders: [{ name: 'work', path: './' }],
-    settings: {},
+  if (!contributeModified) {
+    console.log('Updating sandstone.code-workspace...')
+    const workspace: Workspace = {
+      folders: [{ name: 'work', path: './' }],
+      settings: {},
+    }
+    for (const { shortName, folderName } of reposToProcess) {
+      workspace.folders.push({ name: shortName, path: folderName })
+    }
+    await Bun.write(
+      join(rootDir, 'sandstone.code-workspace'),
+      JSON.stringify(workspace, null, '\t') + '\n'
+    )
+    console.log('')
   }
-  for (const { shortName, folderName } of reposToProcess) {
-    workspace.folders.push({ name: shortName, path: folderName })
-  }
-  await Bun.write(
-    join(rootDir, 'sandstone.code-workspace'),
-    JSON.stringify(workspace, null, '\t') + '\n'
-  )
-  console.log('')
 
   // Step 4: Clone/pull repos
   for (const { shortName, folderName } of reposToProcess) {
