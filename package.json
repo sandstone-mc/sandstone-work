@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "setup": "bun run scripts/setup.ts",
     "dev:link": "bun run scripts/link.ts link",
     "dev:unlink": "bun run scripts/link.ts unlink",
     "dev:build-lib": "cd sandstone && bun run build"

@@ -1,0 +1,9 @@
+{
+    "sandstone": "sandstone",
+    "mcdoc-ts-generator": "mcdoc-ts-generator",
+    "cli": "sandstone-cli",
+    "documentation": "sandstone-documentation",
+    "libraries": "sandstone-libraries",
+    "playground": "sandstone-playground",
+    "template": "sandstone-template"
+}

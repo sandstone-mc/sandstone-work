@@ -2,9 +2,8 @@ manifest.contribute.json
 
 node_modules/
 
-mcdoc-ts-generator/
 sandstone/
-sandstone-build/
+mcdoc-ts-generator/
 sandstone-cli/
 sandstone-documentation/
 sandstone-libraries/

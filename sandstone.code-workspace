@@ -13,10 +13,6 @@
 			"path": "mcdoc-ts-generator"
 		},
 		{
-			"name": "build",
-			"path": "sandstone-build"
-		},
-		{
 			"name": "cli",
 			"path": "sandstone-cli"
 		},
