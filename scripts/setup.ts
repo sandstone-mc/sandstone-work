@@ -241,6 +241,7 @@ async function setup() {
       console.log(`Installing dependencies for ${shortName}...`)
       $.cwd(repoDir)
       await $`bun install`.nothrow()
+      await $`bun pm trust --all`.nothrow()
     }
   }
 
