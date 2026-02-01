@@ -20,7 +20,6 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 - Each project is an independent git repository with its own versioning
 - Root `sandstone.code-workspace` ties them together for VS Code
 - Root bun setup is for development scripts and workspace setup utilities
-- TODO: Linking script when ran multiple times screws things up
 
 ## Common Conventions
 

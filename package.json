@@ -4,8 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev:link": "bun run scripts/link-local.ts",
-    "dev:unlink": "bun run scripts/unlink-local.ts",
+    "dev:link": "bun run scripts/link.ts link",
+    "dev:unlink": "bun run scripts/link.ts unlink",
     "dev:build-lib": "cd sandstone && bun run build"
   },
   "devDependencies": {
