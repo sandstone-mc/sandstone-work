@@ -2,6 +2,7 @@
     "sandstone": "sandstone",
     "mcdoc-ts-generator": "mcdoc-ts-generator",
     "cli": "sandstone-cli",
+    "hot-hook": "hot-hook",
     "documentation": "sandstone-documentation",
     "libraries": "sandstone-libraries",
     "playground": "sandstone-playground",

@@ -17,6 +17,10 @@
 			"path": "sandstone-cli"
 		},
 		{
+			"name": "hot-hook",
+			"path": "hot-hook"
+		},
+		{
 			"name": "documentation",
 			"path": "sandstone-documentation"
 		},

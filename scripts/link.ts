@@ -1,5 +1,5 @@
 /**
- * Link/unlink local packages for development.
+ * Link/unlink local packages for development using bun link.
  *
  * Usage:
  *   bun scripts/link.ts link    - Link local packages for development
@@ -37,11 +37,6 @@ async function getLatestNpmVersion(packageName: string): Promise<string> {
   return `^${data.version}`
 }
 
-async function removeNodeModulesPackage(projectDir: string, packageName: string): Promise<void> {
-  const packagePath = join(projectDir, 'node_modules', packageName)
-  await $`rm -rf ${packagePath}`.quiet().nothrow()
-}
-
 async function directoryExists(path: string): Promise<boolean> {
   try {
     await access(path)
@@ -51,18 +46,26 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
+function isLinked(version: string | undefined): boolean {
+  return version?.startsWith('link:') || version?.startsWith('file:') || false
+}
+
 async function link() {
+  const sandstoneDir = join(rootDir, 'sandstone')
   const cliDir = join(rootDir, 'sandstone-cli')
   const templateDir = join(rootDir, 'sandstone-template')
+  const hotHookDir = join(rootDir, 'hot-hook', 'packages', 'hot_hook')
 
   // Check if already linked
   const cliPkg = await readPackageJson(cliDir)
   const templatePkg = await readPackageJson(templateDir)
 
-  const cliLinked = cliPkg.peerDependencies?.sandstone?.startsWith('file:')
+  const cliSandstoneLinked = isLinked(cliPkg.devDependencies?.sandstone)
+  const cliHotHookLinked = isLinked(cliPkg.dependencies?.['@sandstone-mc/hot-hook'])
+  const cliLinked = cliSandstoneLinked && cliHotHookLinked
   const templateLinked =
-    templatePkg.dependencies?.sandstone?.startsWith('file:') &&
-    templatePkg.devDependencies?.['sandstone-cli']?.startsWith('file:')
+    isLinked(templatePkg.dependencies?.sandstone) &&
+    isLinked(templatePkg.devDependencies?.['sandstone-cli'])
 
   if (cliLinked && templateLinked) {
     console.log('Packages are already linked.')
@@ -72,13 +75,11 @@ async function link() {
   console.log('Linking local packages for development...\n')
 
   // Step 1: Build sandstone (only if dist doesn't exist)
-  const sandstoneDir = join(rootDir, 'sandstone')
   if (await directoryExists(join(sandstoneDir, 'dist'))) {
     console.log('Sandstone already built, skipping...\n')
   } else {
     console.log('Building sandstone...')
-    $.cwd(sandstoneDir)
-    await $`bun run build`
+    await $`bun run build`.cwd(sandstoneDir)
     console.log('Sandstone built\n')
   }
 
@@ -87,45 +88,47 @@ async function link() {
     console.log('sandstone-cli already built, skipping...\n')
   } else {
     console.log('Building sandstone-cli...')
-    $.cwd(cliDir)
-    await $`bun run build`
+    await $`bun run build`.cwd(cliDir)
     console.log('sandstone-cli built\n')
   }
 
-  // Step 3: Update sandstone-cli to use local sandstone
-  console.log('Linking sandstone-cli to local sandstone...')
+  // Step 3: Build hot-hook (only if build doesn't exist)
+  if (await directoryExists(join(hotHookDir, 'build'))) {
+    console.log('hot-hook already built, skipping...\n')
+  } else {
+    console.log('Building hot-hook...')
+    await $`bun run build`.cwd(hotHookDir)
+    console.log('hot-hook built\n')
+  }
 
-  cliPkg.peerDependencies = cliPkg.peerDependencies || {}
-  cliPkg.peerDependencies.sandstone = 'file:../sandstone'
-  await writePackageJson(cliDir, cliPkg)
+  // Step 4: Register packages globally with bun link
+  console.log('Registering sandstone...')
+  await $`bun link`.cwd(sandstoneDir)
 
-  // Remove cached package to avoid EEXIST errors
-  await removeNodeModulesPackage(cliDir, 'sandstone')
+  console.log('Registering sandstone-cli...')
+  await $`bun link`.cwd(cliDir)
 
-  $.cwd(cliDir)
-  await $`bun install`
-  console.log('sandstone-cli linked\n')
+  console.log('Registering hot-hook...')
+  await $`bun link`.cwd(hotHookDir)
 
-  // Step 4: Update sandstone-template to use local packages
-  console.log('Linking sandstone-template to local packages...')
+  // Step 5: Link sandstone and hot-hook into sandstone-cli
+  if (!cliSandstoneLinked) {
+    console.log('\nLinking sandstone into sandstone-cli...')
+    await $`bun link sandstone --save`.cwd(cliDir)
+  }
+  if (!cliHotHookLinked) {
+    console.log('\nLinking hot-hook into sandstone-cli...')
+    await $`bun link @sandstone-mc/hot-hook --save`.cwd(cliDir)
+  }
 
-  templatePkg.dependencies = templatePkg.dependencies || {}
-  templatePkg.dependencies.sandstone = 'file:../sandstone'
+  // Step 6: Link both packages into sandstone-template
+  if (!templateLinked) {
+    console.log('\nLinking packages into sandstone-template...')
+    await $`bun link sandstone --save`.cwd(templateDir)
+    await $`bun link sandstone-cli --save`.cwd(templateDir)
+  }
 
-  templatePkg.devDependencies = templatePkg.devDependencies || {}
-  templatePkg.devDependencies['sandstone-cli'] = 'file:../sandstone-cli'
-
-  await writePackageJson(templateDir, templatePkg)
-
-  // Remove cached packages to avoid EEXIST errors
-  await removeNodeModulesPackage(templateDir, 'sandstone')
-  await removeNodeModulesPackage(templateDir, 'sandstone-cli')
-
-  $.cwd(templateDir)
-  await $`bun install`
-  console.log('sandstone-template linked\n')
-
-  console.log('All packages linked for local development!')
+  console.log('\nAll packages linked for local development!')
   console.log('')
   console.log('You can now:')
   console.log('  cd sandstone-template && bun run build')
@@ -135,17 +138,21 @@ async function link() {
 }
 
 async function unlink() {
+  const sandstoneDir = join(rootDir, 'sandstone')
   const cliDir = join(rootDir, 'sandstone-cli')
   const templateDir = join(rootDir, 'sandstone-template')
+  const hotHookDir = join(rootDir, 'hot-hook', 'packages', 'hot_hook')
 
   // Check if already unlinked
   const cliPkg = await readPackageJson(cliDir)
   const templatePkg = await readPackageJson(templateDir)
 
-  const cliLinked = cliPkg.peerDependencies?.sandstone?.startsWith('file:')
+  const cliSandstoneLinked = isLinked(cliPkg.devDependencies?.sandstone)
+  const cliHotHookLinked = isLinked(cliPkg.dependencies?.['@sandstone-mc/hot-hook'])
+  const cliLinked = cliSandstoneLinked || cliHotHookLinked
   const templateLinked =
-    templatePkg.dependencies?.sandstone?.startsWith('file:') ||
-    templatePkg.devDependencies?.['sandstone-cli']?.startsWith('file:')
+    isLinked(templatePkg.dependencies?.sandstone) ||
+    isLinked(templatePkg.devDependencies?.['sandstone-cli'])
 
   if (!cliLinked && !templateLinked) {
     console.log('Packages are already unlinked.')
@@ -154,47 +161,57 @@ async function unlink() {
 
   console.log('Unlinking local packages...\n')
 
+  // Unregister packages globally
+  console.log('Unregistering sandstone...')
+  await $`bun unlink`.cwd(sandstoneDir).nothrow()
+
+  console.log('Unregistering sandstone-cli...')
+  await $`bun unlink`.cwd(cliDir).nothrow()
+
+  console.log('Unregistering hot-hook...')
+  await $`bun unlink`.cwd(hotHookDir).nothrow()
+
   // Fetch latest versions from npm
-  console.log('Fetching latest versions from npm...')
+  console.log('\nFetching latest versions from npm...')
   const [sandstoneVersion, cliVersion] = await Promise.all([
     getLatestNpmVersion('sandstone'),
     getLatestNpmVersion('sandstone-cli'),
+    // TODO: Fetch @sandstone-mc/hot-hook once published
   ])
   console.log(`  sandstone: ${sandstoneVersion}`)
   console.log(`  sandstone-cli: ${cliVersion}`)
-  console.log('')
 
-  // Step 1: Restore sandstone-cli
+  // Restore sandstone-cli
   if (cliLinked) {
-    console.log('Restoring sandstone-cli...')
-    cliPkg.peerDependencies!.sandstone = sandstoneVersion
+    console.log('\nRestoring sandstone-cli...')
+    if (cliSandstoneLinked) {
+      cliPkg.devDependencies!.sandstone = sandstoneVersion
+    }
+    if (cliHotHookLinked) {
+      // TODO: Set to hotHookVersion once @sandstone-mc/hot-hook is published
+      delete cliPkg.dependencies!['@sandstone-mc/hot-hook']
+    }
     await writePackageJson(cliDir, cliPkg)
-
-    $.cwd(cliDir)
-    await $`bun install`
-    console.log('sandstone-cli restored\n')
+    await $`bun install`.cwd(cliDir)
   }
 
-  // Step 2: Restore sandstone-template
+  // Restore sandstone-template
   if (templateLinked) {
-    console.log('Restoring sandstone-template...')
+    console.log('\nRestoring sandstone-template...')
 
-    if (templatePkg.dependencies?.sandstone?.startsWith('file:')) {
-      templatePkg.dependencies.sandstone = sandstoneVersion
+    if (isLinked(templatePkg.dependencies?.sandstone)) {
+      templatePkg.dependencies!.sandstone = sandstoneVersion
     }
 
-    if (templatePkg.devDependencies?.['sandstone-cli']?.startsWith('file:')) {
-      templatePkg.devDependencies['sandstone-cli'] = cliVersion
+    if (isLinked(templatePkg.devDependencies?.['sandstone-cli'])) {
+      templatePkg.devDependencies!['sandstone-cli'] = cliVersion
     }
 
     await writePackageJson(templateDir, templatePkg)
-
-    $.cwd(templateDir)
-    await $`bun install`
-    console.log('sandstone-template restored\n')
+    await $`bun install`.cwd(templateDir)
   }
 
-  console.log('All packages restored to npm versions!')
+  console.log('\nAll packages restored to npm versions!')
   console.log('Ready for git commit/push.')
 }
 
