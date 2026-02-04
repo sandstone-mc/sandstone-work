@@ -3,6 +3,7 @@
     "**/.git": true,
     "**/.DS_Store": true,
 
+    "hot-hook": true,
     "mcdoc-ts-generator": true,
     "sandstone": true,
     "sandstone-build": true,

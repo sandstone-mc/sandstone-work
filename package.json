@@ -1,6 +1,6 @@
 {
   "name": "sandstone-work",
-  "module": "index.ts",
+  "module": "scripts/setup.ts",
   "type": "module",
   "private": true,
   "scripts": {

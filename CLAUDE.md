@@ -49,8 +49,5 @@ Minecraft mcdoc schemas → mcdoc-ts-generator → sandstone/src/arguments/gener
 
 When Minecraft updates, regenerate types before updating the core library.
 
-## Node Requirements
-
-- Main library: Node >= 22.13.1
-- Documentation: Node >= 18.0
-- All projects: TypeScript 5.x
+## TODOs
+- Add `.vscode/settings.json` to the `setup.ts` script
