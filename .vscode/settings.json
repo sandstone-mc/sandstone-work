@@ -12,5 +12,6 @@
     "sandstone-libraries": true,
     "sandstone-playground": true,
     "sandstone-template": true
-  }
+  },
+  "editor.tabSize": 2
 }
