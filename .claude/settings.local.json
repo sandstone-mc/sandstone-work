@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(bun run build:*)",
-      "Bash(bun run dev:watch)"
+      "Bash(bun run dev:watch)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }
