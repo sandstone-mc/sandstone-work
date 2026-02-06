@@ -9,7 +9,6 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 | `sandstone` | Core library for datapacks/resource packs | bun |
 | `mcdoc-ts-generator` | Generates TypeScript types from Minecraft mcdoc schemas | bun |
 | `sandstone-cli` | CLI tool (`sand`, `create-sandstone` commands) | bun |
-| `sandstone-build` | Build component for the CLI - being phased out | pnpm |
 | `sandstone-documentation` | Docusaurus documentation site - to be migrated to bun | npm |
 | `sandstone-libraries` | Official add-on libraries (pnpm workspace, to be migrated to bun) | pnpm |
 | `sandstone-playground` | Browser-based interactive playground - to be migrated to bun | pnpm |
