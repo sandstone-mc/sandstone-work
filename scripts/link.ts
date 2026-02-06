@@ -173,13 +173,14 @@ async function unlink() {
 
   // Fetch latest versions from npm
   console.log('\nFetching latest versions from npm...')
-  const [sandstoneVersion, cliVersion] = await Promise.all([
+  const [sandstoneVersion, cliVersion, hotHookVersion] = await Promise.all([
     getLatestNpmVersion('sandstone'),
     getLatestNpmVersion('sandstone-cli'),
-    // TODO: Fetch @sandstone-mc/hot-hook once published
+    getLatestNpmVersion('@sandstone-mc/hot-hook')
   ])
   console.log(`  sandstone: ${sandstoneVersion}`)
   console.log(`  sandstone-cli: ${cliVersion}`)
+  console.log(`  @sandstone-mc/hot-hook: ${hotHookVersion}`)
 
   // Restore sandstone-cli
   if (cliLinked) {
@@ -188,8 +189,7 @@ async function unlink() {
       cliPkg.devDependencies!.sandstone = sandstoneVersion
     }
     if (cliHotHookLinked) {
-      // TODO: Set to hotHookVersion once @sandstone-mc/hot-hook is published
-      delete cliPkg.dependencies!['@sandstone-mc/hot-hook']
+      cliPkg.dependencies!['@sandstone-mc/hot-hook'] = hotHookVersion
     }
     await writePackageJson(cliDir, cliPkg)
     await $`bun install`.cwd(cliDir)
