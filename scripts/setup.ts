@@ -14,7 +14,7 @@
  */
 
 import { $ } from 'bun'
-import { access } from 'fs/promises'
+import { access, mkdir } from 'fs/promises'
 import { join } from 'path'
 
 const rootDir = join(import.meta.dir, '..')
@@ -38,6 +38,11 @@ interface WorkspaceFolder {
 interface Workspace {
   folders: WorkspaceFolder[]
   settings: Record<string, unknown>
+}
+
+interface VSCodeSettings {
+  'files.exclude': Record<string, boolean>
+  'editor.tabSize': number
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -197,7 +202,28 @@ async function setup() {
     console.log('')
   }
 
-  // Step 4: Clone/pull repos
+  // Step 4: Update .vscode/settings.json
+  if (!contributeModified) {
+    console.log('Updating .vscode/settings.json...')
+    const vscodeDir = join(rootDir, '.vscode')
+    if (!(await fileExists(vscodeDir))) {
+      await mkdir(vscodeDir)
+    }
+    const settings: VSCodeSettings = {
+      'files.exclude': {
+        '**/.git': true,
+        '**/.DS_Store': true,
+      },
+      'editor.tabSize': 2,
+    }
+    for (const { folderName } of reposToProcess) {
+      settings['files.exclude'][folderName] = true
+    }
+    await writeJson(join(vscodeDir, 'settings.json'), settings)
+    console.log('')
+  }
+
+  // Step 5: Clone/pull repos
   for (const { shortName, folderName } of reposToProcess) {
     const repoDir = join(rootDir, folderName)
     const repoUrl = `https://github.com/${gitUser}/${folderName}.git`
@@ -225,7 +251,7 @@ async function setup() {
   }
   console.log('')
 
-  // Step 5: Run bun install where needed
+  // Step 6: Run bun install where needed
   console.log('Installing dependencies...')
   for (const { shortName, folderName } of reposToProcess) {
     const repoDir = join(rootDir, folderName)
