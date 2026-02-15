@@ -8,7 +8,7 @@
     "dev:template": "bun run scripts/template.ts",
     "dev:link": "bun run scripts/link.ts link",
     "dev:unlink": "bun run scripts/link.ts unlink",
-    "dev:build-lib": "cd sandstone && bun run build"
+    "dev:build-lib": "cd sandstone && bun dev:build"
   },
   "devDependencies": {
     "@types/bun": "latest"

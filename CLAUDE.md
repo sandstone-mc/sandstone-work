@@ -109,9 +109,12 @@ bun run dev:build-lib    # Equivalent to: cd sandstone && bun run build
 ### Iterating on Type Generation
 
 1. Make changes in `mcdoc-ts-generator/src/`
-2. Run `bun run compile` in mcdoc-ts-generator to regenerate types
-3. Copy generated types to `sandstone/src/arguments/generated/`
-4. Rebuild sandstone
+2. (Optional) Run `bun run compile` in mcdoc-ts-generator to verify changes in local `types/` directory
+3. Build the generator: `cd mcdoc-ts-generator && bun run build`
+4. Update sandstone types: `cd sandstone && bun run update-from-mcdoc`
+5. Rebuild sandstone: `bun run dev:build-lib`
+
+**Tip:** Use `bun run compile` to quickly inspect generated output in `types/` before committing to rebuild sandstone.
 
 ## Type Generation Pipeline
 
@@ -122,10 +125,12 @@ Minecraft mcdoc schemas (vanilla-mcdoc)
          ↓
     mcdoc-ts-generator
          ↓
-    types/ directory
-         ↓
     sandstone/src/arguments/generated/
 ```
+
+Two output modes:
+- **`bun run compile`** (in mcdoc-ts-generator) → outputs to `types/` for inspection
+- **`bun run update-from-mcdoc`** (in sandstone) → outputs directly to sandstone's generated types
 
 When Minecraft updates, regenerate types before updating the core library.
 
