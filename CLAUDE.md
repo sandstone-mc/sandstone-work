@@ -45,24 +45,24 @@ What it does:
 4. Clones missing repos or pulls existing ones (skips if not on main/master or if using fork)
 5. Runs `bun install` where `bun.lock` exists but `node_modules/` doesn't
 
-### `bun run dev:template` — Template Checkout
+### `bun dev:template` — Template Checkout
 
 Prepares the template repo for development by checking out the latest versioned branch.
 
 ```bash
-bun run dev:template              # Checkout latest pack template (e.g., pack-0.9.0)
-bun run dev:template --library    # Checkout latest library template
+bun dev:template              # Checkout latest pack template (e.g., pack-0.9.0)
+bun dev:template --library    # Checkout latest library template
 ```
 
 Template branches follow semver: `pack-X.Y.Z` or `library-X.Y.Z`. The script finds the highest version and checks it out.
 
-### `bun run dev:link` / `bun run dev:unlink` — Local Package Linking
+### `bun dev:link` / `bun dev:unlink` — Local Package Linking
 
 Links local packages together for development so changes propagate without publishing.
 
 ```bash
-bun run dev:link      # Link local packages for development
-bun run dev:unlink    # Restore npm versions (fetches latest from registry)
+bun dev:link      # Link local packages for development
+bun dev:unlink    # Restore npm versions (fetches latest from registry)
 ```
 
 **Link chain:**
@@ -78,14 +78,14 @@ When linked:
 - Registers packages globally with `bun link`
 - Links dependencies between packages with `bun link <package> --save`
 
-Always run `bun run dev:unlink` before committing changes to any package.json files.
+Always run `bun dev:unlink` before committing changes to any package.json files.
 
-### `bun run dev:build-lib` — Build Core Library
+### `bun dev:build-lib` — Build Core Library
 
 Quick shortcut to rebuild the sandstone library:
 
 ```bash
-bun run dev:build-lib    # Equivalent to: cd sandstone && bun run build
+bun dev:build-lib    # Equivalent to: cd sandstone && bun dev:build
 ```
 
 ## Development Workflow
@@ -93,28 +93,28 @@ bun run dev:build-lib    # Equivalent to: cd sandstone && bun run build
 ### Iterating on the Core Library
 
 1. Run `bun run setup` to clone all repos
-2. Run `bun run dev:template` to checkout a template branch
-3. Run `bun run dev:link` to link packages locally
+2. Run `bun dev:template` to checkout a template branch
+3. Run `bun dev:link` to link packages locally
 4. Make changes in `sandstone/src/`
-5. Rebuild with `bun run dev:build-lib`
-6. Test in `sandstone-template/` with `bun run build`
-7. Before committing: `bun run dev:unlink` in workspace root
+5. Rebuild with `bun dev:build-lib`
+6. Test in `sandstone-template/` with `bun dev:build`
+7. Before committing: `bun dev:unlink` in workspace root
 
 ### Iterating on the CLI
 
 1. Make changes in `sandstone-cli/src/`
-2. Rebuild with `cd sandstone-cli && bun run build`
-3. Test in `sandstone-template/` with `bun run watch` (uses the CLI's watch mode)
+2. Rebuild with `cd sandstone-cli && bun dev:build`
+3. Test in `sandstone-template/` in the background with `bun dev:watch` (uses the CLI's watch mode)
 
 ### Iterating on Type Generation
 
 1. Make changes in `mcdoc-ts-generator/src/`
-2. (Optional) Run `bun run compile` in mcdoc-ts-generator to verify changes in local `types/` directory
-3. Build the generator: `cd mcdoc-ts-generator && bun run build`
-4. Update sandstone types: `cd sandstone && bun run update-from-mcdoc`
-5. Rebuild sandstone: `bun run dev:build-lib`
+2. (Optional) Run `bun compile` in mcdoc-ts-generator to verify changes in local `types/` directory
+3. Build the generator: `cd mcdoc-ts-generator && bun dev:build`
+4. Update sandstone types: `cd sandstone && bun update-from-mcdoc`
+5. Rebuild sandstone: `bun dev:build-lib`
 
-**Tip:** Use `bun run compile` to quickly inspect generated output in `types/` before committing to rebuild sandstone.
+**Tip:** Use `bun compile` to quickly inspect generated output in `types/` before committing to rebuild sandstone.
 
 ## Type Generation Pipeline
 
@@ -129,8 +129,8 @@ Minecraft mcdoc schemas (vanilla-mcdoc)
 ```
 
 Two output modes:
-- **`bun run compile`** (in mcdoc-ts-generator) → outputs to `types/` for inspection
-- **`bun run update-from-mcdoc`** (in sandstone) → outputs directly to sandstone's generated types
+- **`bun compile`** (in mcdoc-ts-generator) → outputs to `types/` for inspection
+- **`bun update-from-mcdoc`** (in sandstone) → outputs directly to sandstone's generated types
 
 When Minecraft updates, regenerate types before updating the core library.
 
@@ -165,6 +165,7 @@ Open `sandstone.code-workspace` for multi-root workspace support. The workspace 
 Each project has its own `CLAUDE.md` with project-specific guidance:
 - `sandstone/CLAUDE.md` — Core library architecture, AST system, command implementation patterns
 - `mcdoc-ts-generator/CLAUDE.md` — Type generation architecture, mcdoc handlers
+- `sandstone-cli/CLAUDE.md` — CLI commands, launcher detection, test harness for interactive testing
 
 ## TODOs
 - Migrate remaining projects (documentation, libraries, playground) to bun

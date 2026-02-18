@@ -2,15 +2,15 @@
  * Setup script for the Sandstone monorepo.
  *
  * Usage:
- *   bun scripts/setup.ts                     - Run setup with default settings
- *   bun scripts/setup.ts --org <name>        - Use a different git org/user
- *   bun scripts/setup.ts --skip <repos>      - Skip specific repos (comma-separated)
- *   bun scripts/setup.ts --only <repos>      - Only include specific repos (comma-separated)
+ *   bun run setup                     - Run setup with default settings
+ *   bun run setup --org <name>        - Use a different git org/user
+ *   bun run setup --skip <repos>      - Skip specific repos (comma-separated)
+ *   bun run setup --only <repos>      - Only include specific repos (comma-separated)
  *
  * Examples:
- *   bun scripts/setup.ts --org MulverineX
- *   bun scripts/setup.ts --skip documentation,playground
- *   bun scripts/setup.ts --only sandstone,cli,template
+ *   bun run setup --org MulverineX
+ *   bun run setup --skip documentation,playground
+ *   bun run setup --only sandstone,cli,template
  */
 
 import { $ } from 'bun'
@@ -278,7 +278,7 @@ async function main() {
   const args = process.argv.slice(2)
 
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: bun scripts/setup.ts [options]')
+    console.log('Usage: bun run setup [options]')
     console.log('')
     console.log('Options:')
     console.log('  --org <name>     Use a different git org/user (default: sandstone-mc)')
@@ -287,9 +287,9 @@ async function main() {
     console.log('  --help, -h       Show this help message')
     console.log('')
     console.log('Examples:')
-    console.log('  bun scripts/setup.ts --org MulverineX')
-    console.log('  bun scripts/setup.ts --skip documentation,playground')
-    console.log('  bun scripts/setup.ts --only sandstone,cli,template')
+    console.log('  bun run setup --org MulverineX')
+    console.log('  bun run setup --skip documentation,playground')
+    console.log('  bun run setup --only sandstone,cli,template')
     process.exit(0)
   }
 

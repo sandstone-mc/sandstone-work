@@ -2,11 +2,10 @@
   "files.exclude": {
     "**/.git": true,
     "**/.DS_Store": true,
-
-    "hot-hook": true,
-    "mcdoc-ts-generator": true,
     "sandstone": true,
+    "mcdoc-ts-generator": true,
     "sandstone-cli": true,
+    "hot-hook": true,
     "sandstone-documentation": true,
     "sandstone-libraries": true,
     "sandstone-playground": true,

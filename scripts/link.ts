@@ -2,8 +2,8 @@
  * Link/unlink local packages for development using bun link.
  *
  * Usage:
- *   bun scripts/link.ts link    - Link local packages for development
- *   bun scripts/link.ts unlink  - Restore npm versions (fetches latest from registry)
+ *   bun dev:link    - Link local packages for development
+ *   bun dev:unlink  - Restore npm versions (fetches latest from registry)
  */
 
 import { $ } from 'bun'
@@ -82,7 +82,7 @@ async function link() {
     console.log('Sandstone already built, skipping...\n')
   } else {
     console.log('Building sandstone...')
-    await $`bun run build`.cwd(sandstoneDir)
+    await $`bun dev:build`.cwd(sandstoneDir)
     console.log('Sandstone built\n')
   }
 
@@ -91,7 +91,7 @@ async function link() {
     console.log('sandstone-cli already built, skipping...\n')
   } else {
     console.log('Building sandstone-cli...')
-    await $`bun run build`.cwd(cliDir)
+    await $`bun dev:build`.cwd(cliDir)
     console.log('sandstone-cli built\n')
   }
 
@@ -109,7 +109,7 @@ async function link() {
     console.log('mcdoc-ts-generator already built, skipping...\n')
   } else {
     console.log('Building mcdoc-ts-generator...')
-    await $`bun run build`.cwd(mcdocTsGenDir)
+    await $`bun dev:build`.cwd(mcdocTsGenDir)
     console.log('mcdoc-ts-generator built\n')
   }
 
@@ -142,7 +142,7 @@ async function link() {
     await $`bun link @sandstone-mc/hot-hook --save`.cwd(cliDir)
   }
 
-  // Step 6: Link both packages into sandstone-template
+  // Step 8: Link both packages into sandstone-template
   if (!templateLinked) {
     console.log('\nLinking packages into sandstone-template...')
     await $`bun link sandstone --save`.cwd(templateDir)
@@ -152,10 +152,10 @@ async function link() {
   console.log('\nAll packages linked for local development!')
   console.log('')
   console.log('You can now:')
-  console.log('  cd sandstone-template && bun run build')
+  console.log('  cd sandstone-template && bun dev:build')
   console.log('')
   console.log('To restore npm versions before committing:')
-  console.log('  bun scripts/link.ts unlink')
+  console.log('  bun dev:unlink')
 }
 
 async function unlink() {
@@ -201,7 +201,7 @@ async function unlink() {
   // Fetch latest versions from npm
   console.log('\nFetching latest versions from npm...')
   const [sandstoneVersion, cliVersion, hotHookVersion, mcdocTsGenVersion] = await Promise.all([
-    getLatestNpmVersion('sandstone'),
+    new Promise<string>((res) => res('^1.0.0-beta.1')), // TODO: Once we're out of beta this can use getLatestNpmVersion again
     getLatestNpmVersion('sandstone-cli'),
     getLatestNpmVersion('@sandstone-mc/hot-hook'),
     getLatestNpmVersion('@sandstone-mc/mcdoc-ts-generator')
@@ -235,15 +235,12 @@ async function unlink() {
   // Restore sandstone-template
   if (templateLinked) {
     console.log('\nRestoring sandstone-template...')
-
     if (isLinked(templatePkg.dependencies?.sandstone)) {
       templatePkg.dependencies!.sandstone = sandstoneVersion
     }
-
     if (isLinked(templatePkg.devDependencies?.['sandstone-cli'])) {
       templatePkg.devDependencies!['sandstone-cli'] = cliVersion
     }
-
     await writePackageJson(templateDir, templatePkg)
     await $`bun install`.cwd(templateDir)
   }
@@ -260,11 +257,7 @@ async function main() {
   } else if (command === 'unlink') {
     await unlink()
   } else {
-    console.log('Usage: bun scripts/link.ts <link|unlink>')
-    console.log('')
-    console.log('Commands:')
-    console.log('  link    - Link local packages for development')
-    console.log('  unlink  - Restore npm versions (fetches latest from registry)')
+    console.log('Usage: bun dev:link|unlink')
     process.exit(1)
   }
 }

@@ -1,7 +1,12 @@
 {
   "name": "sandstone-work",
   "module": "scripts/setup.ts",
-  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
   "private": true,
   "scripts": {
     "setup": "bun run scripts/setup.ts",
@@ -10,10 +15,5 @@
     "dev:unlink": "bun run scripts/link.ts unlink",
     "dev:build-lib": "cd sandstone && bun dev:build"
   },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+  "type": "module"
 }

@@ -2,9 +2,9 @@
  * Template script to prepare the sandstone-template for development.
  *
  * Usage:
- *   bun scripts/template.ts              - Checkout latest pack template
- *   bun scripts/template.ts --library    - Checkout latest library template
- *   bun scripts/template.ts --help       - Show help
+ *   bun dev:template              - Checkout latest pack template
+ *   bun dev:template --library    - Checkout latest library template
+ *   bun dev:template --help       - Show help
  */
 
 import { $ } from 'bun'
@@ -98,15 +98,15 @@ function parseArgs(): { type: TemplateType; help: boolean } {
 }
 
 function showHelp() {
-  console.log(`Usage: bun scripts/template.ts [options]
+  console.log(`Usage: bun dev:template [options]
 
 Options:
   --library    Use library template instead of pack template
   --help, -h   Show this help message
 
 Examples:
-  bun run dev:template              Checkout latest pack template
-  bun run dev:template --library    Checkout latest library template`)
+  bun dev:template              Checkout latest pack template
+  bun dev:template --library    Checkout latest library template`)
 }
 
 async function dev() {
