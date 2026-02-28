@@ -2,6 +2,16 @@
 
 Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for creating Minecraft datapacks and resource packs.
 
+## Agent Rules
+1. Before launching an "Explore" process with sub-agent(s) and lots of token intake, get manual confirmation from the user that they want you to do that.
+2. Be mindful of your CWD and form your `cd` calls accordingly
+3. If you are getting errors from an IDE MCP Diagnostics call and they don't make any sense (or should have been fixed by changes you made), dont revert changes, just ask the user to restart the offending language server.
+4. When the user has an IDE connected to you, always pay attention to what file they have open and what text they have selected.
+5. Do not use `timeout` parameter in your Bash MCP, its buggy and breaks stuff. Let the user build if needed.
+6. When you create a new source code file and you want to check it with IDE MCP, ask the user to open the file first, because usually vscode won't generate errors until the file is opened.
+7. Do not use IDE MCP on Markdown files
+8. Always check what operating system and shell you are running inside of and remember it.
+
 ## Projects
 
 | Short Name | Folder | Purpose | Package Manager |

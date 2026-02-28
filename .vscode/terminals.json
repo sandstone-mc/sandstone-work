@@ -14,7 +14,7 @@
       "color": "terminal.ansiGreen",
       "onlyMultiple": true,
       "commands": [
-        "$env:VSCODE_PID=\"\"; $env:VSCODE_CWD=\"\"; $env:TERM_PROGRAM=\"\"; clear && claude"
+        "clear && claude"
       ],
       "execute": false,
       "focus": false
