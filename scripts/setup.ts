@@ -226,7 +226,7 @@ async function setup() {
   // Step 5: Clone/pull repos
   for (const { shortName, folderName } of reposToProcess) {
     const repoDir = join(rootDir, folderName)
-    const repoUrl = `https://github.com/${gitUser}/${folderName}.git`
+    const repoUrl = `git@github.com:${gitUser}/${folderName}.git`
 
     if (await fileExists(repoDir)) {
       // Repo exists - check if we should pull
