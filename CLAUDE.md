@@ -22,7 +22,7 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 | `hot-hook` | `hot-hook/` | Fork of hot-hook with Bun support for HMR during dev | bun |
 | `documentation` | `sandstone-documentation/` | Docusaurus documentation site (migrating to bun) | npm |
 | `libraries` | `sandstone-libraries/` | Official add-on libraries (migrating to bun) | pnpm |
-| `playground` | `sandstone-playground/` | Browser-based interactive playground (migrating to bun) | pnpm |
+| `playground` | `sandstone-playground/` | Browser-based interactive playground | bun |
 | `template` | `sandstone-template/` | Starter templates (each template is a branch) | bun |
 
 All repos are under the `sandstone-mc` GitHub organization.
@@ -178,4 +178,4 @@ Each project has its own `CLAUDE.md` with project-specific guidance:
 - `sandstone-cli/CLAUDE.md` — CLI commands, launcher detection, test harness for interactive testing
 
 ## TODOs
-- Migrate remaining projects (documentation, libraries, playground) to bun
+- Migrate remaining projects (documentation, libraries) to bun
