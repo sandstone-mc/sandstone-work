@@ -42,6 +42,67 @@ const PACKAGES: Record<string, PackageConfig> = {
 }
 
 /**
+ * Get GitHub repo URL from git remote (SSH format: git@github.com:org/repo.git)
+ */
+async function getGitHubRepoUrl(dir: string): Promise<string | null> {
+    const remote = await $`git -C ${dir} remote get-url origin 2>/dev/null || echo ""`.text()
+    const match = remote.trim().match(/git@github\.com:(.+?)(?:\.git)?$/)
+    return match ? `https://github.com/${match[1]}` : null
+}
+
+/**
+ * Update CHANGELOG.md with new release entry (if it exists)
+ */
+async function updateChangelog(
+    dir: string,
+    version: string,
+    title: string,
+    body?: string,
+    previousTag?: string | null
+): Promise<boolean> {
+    const changelogPath = resolve(dir, 'CHANGELOG.md')
+    if (!existsSync(changelogPath)) {
+        return false
+    }
+
+    const repoUrl = await getGitHubRepoUrl(dir)
+    if (!repoUrl) {
+        console.log('⚠️  Could not determine GitHub repo URL, skipping changelog update')
+        return false
+    }
+
+    const tag = `v${version}`
+    const date = new Date().toISOString().split('T')[0]
+
+    // Build the new entry
+    let entry = `## [${tag}](${repoUrl}/releases/tag/${tag}) - ${date}\n\n`
+    entry += `### ${title}\n\n`
+    if (body) {
+        entry += `${body}\n\n`
+    }
+    if (previousTag) {
+        entry += `**Full Changelog**: [${previousTag}...${tag}](${repoUrl}/compare/${previousTag}...${tag})\n`
+    }
+    entry += '\n\n'
+
+    // Read existing changelog
+    const changelog = await Bun.file(changelogPath).text()
+
+    // Find where to insert (after the header line "# Changelog" and any following blank lines/description)
+    const headerMatch = changelog.match(/^# Changelog\n+(?:.*\n+)?(?=## |\z)/m)
+    if (headerMatch) {
+        const insertPos = headerMatch.index! + headerMatch[0].length
+        const newChangelog = changelog.slice(0, insertPos) + entry + changelog.slice(insertPos)
+        await Bun.write(changelogPath, newChangelog)
+    } else {
+        // No header found, prepend to file
+        await Bun.write(changelogPath, `# Changelog\n\n${entry}${changelog}`)
+    }
+
+    return true
+}
+
+/**
  * Increment version string
  * - `1.0.0` → `1.0.1`
  * - `1.0.0-beta.3` → `1.0.0-beta.4`
@@ -236,6 +297,16 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
         packageJson.version = version
         await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n')
         console.log(`📝 Updated package.json to version ${version}`)
+    }
+
+    // Get latest tag for changelog compare link
+    const latestTagResult = await $`git -C ${packageDir} describe --tags --abbrev=0 2>/dev/null || echo ""`.text()
+    const previousTag = latestTagResult.trim() || null
+
+    // Update changelog if it exists
+    const changelogUpdated = await updateChangelog(packageDir, version, title, body, previousTag)
+    if (changelogUpdated) {
+        console.log('📋 Updated CHANGELOG.md')
     }
 
     console.log(`📦 Package: ${packageName} (${pkg.dir})`)
