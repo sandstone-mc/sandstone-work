@@ -5,6 +5,5 @@
       "Bash(bun dev:watch)",
       "Bash(bun dev:build)"
     ]
-  },
-  "model": "claude-opus-4-5-20251101"
+  }
 }
