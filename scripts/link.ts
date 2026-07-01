@@ -188,7 +188,7 @@ async function unlink() {
   // Fetch latest versions from npm
   console.log('\nFetching latest versions from npm...')
   const [sandstoneVersion, cliVersion, hotHookVersion, mcdocTsGenVersion] = await Promise.all([
-    new Promise<string>((res) => res('^1.0.0-beta.4')), // TODO: Once we're out of beta this can use getLatestNpmVersion again
+    getLatestNpmVersion('sandstone'),
     getLatestNpmVersion('sandstone-cli'),
     getLatestNpmVersion('@sandstone-mc/hot-hook'),
     getLatestNpmVersion('@sandstone-mc/mcdoc-ts-generator')
