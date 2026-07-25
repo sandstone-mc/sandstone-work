@@ -90,12 +90,18 @@ When linked:
 
 Always run `bun dev:unlink` before committing changes to any package.json files.
 
-### `bun dev:build-lib` — Build Core Library
+### Build Core Library
 
-Quick shortcut to rebuild the sandstone library:
+From the workspace root:
 
 ```bash
-bun dev:build-lib    # Equivalent to: cd sandstone && bun dev:build
+bun dev:build:library    # Equivalent to: cd sandstone && bun dev:build
+```
+
+From `sandstone/`:
+
+```bash
+bun dev:build
 ```
 
 ## Development Workflow
@@ -106,7 +112,7 @@ bun dev:build-lib    # Equivalent to: cd sandstone && bun dev:build
 2. Run `bun dev:template` to checkout a template branch
 3. Run `bun dev:link` to link packages locally
 4. Make changes in `sandstone/src/`
-5. Rebuild with `bun dev:build-lib`
+5. From the workspace root, rebuild with `bun dev:build:library`
 6. Test in `sandstone-template/` with `bun dev:build`
 7. Before committing: `bun dev:unlink` in workspace root
 
@@ -122,7 +128,7 @@ bun dev:build-lib    # Equivalent to: cd sandstone && bun dev:build
 2. (Optional) Run `bun compile` in mcdoc-ts-generator to verify changes in local `types/` directory
 3. Build the generator: `cd mcdoc-ts-generator && bun dev:build`
 4. Update sandstone types: `cd sandstone && bun update-from-mcdoc`
-5. Rebuild sandstone: `bun dev:build-lib`
+5. Rebuild sandstone from `sandstone/` with `bun dev:build` (or from the workspace root with `bun dev:build:library`)
 
 **Tip:** Use `bun compile` to quickly inspect generated output in `types/` before committing to rebuild sandstone.
 
