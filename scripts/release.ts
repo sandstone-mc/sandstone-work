@@ -186,17 +186,20 @@ async function askReleaseKind(info: PackageInfo): Promise<ReleaseKind | null> {
  *
  * Silent on errors and on existing branches — never fails the release.
  */
-async function createMinorBranches(packageDir: string, prevMinor: string, newMinor: string): Promise<void> {
+export async function createMinorBranches(packageDir: string, prevMinor: string, newMinor: string): Promise<void> {
     const templateDir = resolve(import.meta.dir, '..', 'sandstone-template')
 
     // 1. Sandstone: create v{prevMinor}.x from the previous tag's commit.
     try {
-        const prevTagResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$' | head -n2 | tail -n1`.quiet().nothrow()
+        // Bun's $ shell passes single-quoted "..." verbatim — \\. inside '...' reaches
+        // grep as \\. (literal backslash + any char), so the regex never matches.
+        // Use double-quoted "..." so \\. collapses to \. (escaped dot) for grep.
+        const prevTagResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$" | head -n2 | tail -n1`.nothrow()
         const prevTag = prevTagResult.stdout.toString().trim()
         if (!prevTag) {
             console.log(`⚠️  Could not determine previous tag; skipping v${prevMinor}.x`)
         } else {
-            const existsCheck = await $`git -C ${packageDir} ls-remote --heads origin v${prevMinor}.x`.quiet().nothrow()
+            const existsCheck = await $`git -C ${packageDir} ls-remote --heads origin v${prevMinor}.x`.nothrow()
             if (existsCheck.stdout.toString().trim().length > 0) {
                 console.log(`ℹ️  v${prevMinor}.x already exists on remote; skipping creation`)
             } else {
@@ -223,12 +226,12 @@ async function createMinorBranches(packageDir: string, prevMinor: string, newMin
         const target = `${type}-${newMinor}.0`
         const source = `${type}-${prevMinor}.0`
         try {
-            const sourceExists = await $`git -C ${templateDir} ls-remote --heads origin ${source}`.quiet().nothrow()
+            const sourceExists = await $`git -C ${templateDir} ls-remote --heads origin ${source}`.nothrow()
             if (sourceExists.stdout.toString().trim().length === 0) {
                 console.log(`⚠️  ${source} does not exist on template remote; skipping ${target}`)
                 continue
             }
-            const targetExists = await $`git -C ${templateDir} ls-remote --heads origin ${target}`.quiet().nothrow()
+            const targetExists = await $`git -C ${templateDir} ls-remote --heads origin ${target}`.nothrow()
             if (targetExists.stdout.toString().trim().length > 0) {
                 console.log(`ℹ️  ${target} already exists on remote; skipping`)
                 continue
@@ -513,8 +516,8 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
     let version: string = packageJson.version
 
     // For 'patch' kinds, auto-increment if a tag with the same version already
-    // exists. For 'minor', respect the user-set version as-is — they have
-    // already edited package.json to the new minor release.
+    // exists. For 'minor', bump to the next X.(Y+1).0 (or skip if the user
+    // already pre-bumped package.json) — same loop-as-long-as-collide pattern.
     let tag = `v${version}`
     if (kind === 'patch') {
         let existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
@@ -525,16 +528,20 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
             existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
         }
     } else {
-        // minor kind: tag must not already exist; abort if it does
-        const existingTag = (await $`git -C ${packageDir} tag -l ${tag}`.text()).trim()
-        if (existingTag) {
-            console.error(`❌ Tag ${tag} already exists. Cannot release as a new minor without bumping version.`)
-            console.error(`   Edit package.json to a new X.Y.0 version and try again.`)
-            process.exit(1)
+        // minor kind: bump to next X.(Y+1).0 while the resulting tag already exists
+        let existingTag = (await $`git -C ${packageDir} tag -l ${tag}`.text()).trim()
+        while (existingTag) {
+            const m = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+            if (!m) break
+            const [, maj, min] = m
+            version = `${maj}.${parseInt(min) + 1}.0`
+            tag = `v${version}`
+            console.log(`⚠️  Tag collision, bumping to next minor: ${version}`)
+            existingTag = (await $`git -C ${packageDir} tag -l ${tag}`.text()).trim()
         }
     }
 
-    // Update package.json if version changed (only happens for patch mode)
+    // Update package.json if version changed (auto-increment above for both patch and minor)
     if (version !== packageJson.version) {
         packageJson.version = version
         await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n')
@@ -594,21 +601,38 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
 
     // For sandstone minor releases: create archival branch + template branches.
     if (packageName === 'sandstone' && kind === 'minor') {
-        const versionMatch = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
-        if (versionMatch) {
-            const newMinor = `${versionMatch[1]}.${versionMatch[2]}`
-            // previous minor in the form X.(Y-1) — fall back to direct lookup
-            // of the highest tagged version BEFORE the just-released tag.
-            const allTags = (await $`git -C ${packageDir} tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$'`.text())
-                .split('\n').map((t) => t.trim()).filter(Boolean)
-            const prevTag = allTags.find((t) => t !== tag)
-            if (prevTag) {
-                const prevMatch = prevTag.match(/^v(\d+)\.(\d+)\./)
-                if (prevMatch) {
-                    const prevMinor = `${prevMatch[1]}.${prevMatch[2]}`
-                    await createMinorBranches(packageDir, prevMinor, newMinor)
-                }
+        try {
+            const versionMatch = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+            if (!versionMatch) {
+                console.log(`⚠️  Could not parse version ${version}; skipping minor branch creation`)
+                return
             }
+            const newMinor = `${versionMatch[1]}.${versionMatch[2]}`
+
+            const allTagsResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$"`.nothrow()
+            if (allTagsResult.exitCode !== 0) {
+                console.log(`⚠️  Failed to list tags: ${allTagsResult.stderr.toString().trim()}; skipping branch creation`)
+                return
+            }
+            const allTags = allTagsResult.stdout.toString().split('\n').map((t) => t.trim()).filter(Boolean)
+            const prevTag = allTags.find((t) => t !== tag)
+            if (!prevTag) {
+                console.log(`⚠️  Could not determine previous tag; skipping branch creation`)
+                return
+            }
+            const prevMatch = prevTag.match(/^v(\d+)\.(\d+)\./)
+            if (!prevMatch) {
+                console.log(`⚠️  Could not parse previous tag ${prevTag}; skipping branch creation`)
+                return
+            }
+            const prevMinor = `${prevMatch[1]}.${prevMatch[2]}`
+            console.log(`🌿 Post-release branch creation: prev=${prevTag} (${prevMinor}) → new=${tag} (${newMinor})`)
+            await createMinorBranches(packageDir, prevMinor, newMinor)
+            console.log(`✅ Minor branch creation complete`)
+        } catch (e) {
+            console.error(`❌ Post-release branch creation failed: ${(e as Error).message ?? e}`)
+            console.error(`   Re-run with: bun scripts/release-minor-branches.ts [packageDir] [prevMinor] [newMinor]`)
+            process.exit(1)
         }
     }
 }
@@ -650,7 +674,9 @@ async function main() {
     }
 }
 
-main().catch((err) => {
-    console.error('❌ Error:', err.message)
-    process.exit(1)
-})
+if (import.meta.main) {
+    main().catch((err) => {
+        console.error('❌ Error:', err.message)
+        process.exit(1)
+    })
+}
