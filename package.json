@@ -2,7 +2,10 @@
   "name": "sandstone-work",
   "module": "scripts/setup.ts",
   "dependencies": {
-    "@inquirer/prompts": "^8.2.0"
+    "@ampproject/remapping": "^2.3.0",
+    "@inquirer/prompts": "^8.2.0",
+    "magic-string": "^1.1.0",
+    "source-map-js": "^1.2.1"
   },
   "devDependencies": {
     "@types/bun": "latest"
