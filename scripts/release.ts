@@ -135,7 +135,7 @@ async function askReleaseKind(info: PackageInfo): Promise<ReleaseKind | null> {
 
     const branchResult = await $`git -C ${info.dir} rev-parse --abbrev-ref HEAD`.quiet().nothrow()
     const currentBranch = branchResult.stdout.toString().trim()
-    const archivedBranch = /^v\d+\.x$/.test(currentBranch)
+    const archivedBranch = /^v\d+\.\d+\.x$/.test(currentBranch)
 
     if (archivedBranch) {
         // V*.x branches only support patches within that minor.
