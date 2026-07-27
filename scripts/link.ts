@@ -55,24 +55,40 @@ async function getChannelForBranch(repoDir: string): Promise<'latest' | string> 
 /**
  * Fetch a version from a specific npm dist-tag for the given package.
  * Returns the version prefixed with `^` for use in package.json.
+ *
+ * Returns null when the dist-tag is missing (e.g. a per-minor tag like
+ * `v1.0` that hasn't been published yet), so the caller can fall back to
+ * `latest` instead of erroring.
  */
-async function getNpmVersionForChannel(packageName: string, channel: string): Promise<string> {
-  const response = await fetch(`https://registry.npmjs.org/-/v1/tags/${encodeURIComponent(channel)}/package/${encodeURIComponent(packageName)}`)
+async function getNpmVersionForChannel(packageName: string, channel: string): Promise<string | null> {
+  // The shortcut endpoint `/-/v1/tags/<tag>/package/<pkg>` returns 404
+  // even for tags that exist on the registry, so look up the package
+  // directly and pull the dist-tags map.
+  const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`)
   if (!response.ok) {
-    throw new Error(`Failed to fetch dist-tag ${channel} for ${packageName}: ${response.statusText}`)
+    throw new Error(`Failed to fetch package metadata for ${packageName}: ${response.statusText}`)
   }
-  const data = await response.json() as { version: string }
-  return `^${data.version}`
+  const data = await response.json() as { 'dist-tags'?: Record<string, string> }
+  const version = data['dist-tags']?.[channel]
+  return version === undefined ? null : `^${version}`
 }
 
 /**
  * Restore a package.json dep to the version published on the channel that
  * matches the current git branch of that repo (master → latest, v*.x →
- * per-minor dist-tag). Falls back to `latest` if channel resolution fails.
+ * per-minor dist-tag). Falls back to `latest` if the per-minor tag hasn't
+ * been published yet.
  */
 async function getRestoreVersion(repoDir: string, packageName: string): Promise<string> {
   const channel = await getChannelForBranch(repoDir)
-  return await getNpmVersionForChannel(packageName, channel)
+  const versioned = await getNpmVersionForChannel(packageName, channel)
+  if (versioned !== null) return versioned
+  const fallback = await getNpmVersionForChannel(packageName, 'latest')
+  if (fallback === null) {
+    throw new Error(`Neither '${channel}' nor 'latest' dist-tag exists for ${packageName}`)
+  }
+  console.warn(`⚠️  ${packageName} has no '${channel}' dist-tag yet; falling back to 'latest' (${fallback})`)
+  return fallback
 }
 
 async function directoryExists(path: string): Promise<boolean> {

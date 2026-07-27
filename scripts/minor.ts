@@ -1,6 +1,6 @@
 /**
  * Switch sandstone + template to a different minor version (live master or
- * an archived v{X}.x branch).
+ * an archived v{X}.{Y}.x branch).
  *
  * Usage:
  *   bun dev:minor              - interactive
@@ -11,7 +11,7 @@
  * The script lists each candidate minor EXACTLY ONCE:
  *   - The current master minor (derived from origin/master's package.json
  *     version) gets one entry labelled "Latest (master)".
- *   - Each remote v{X}.x branch gets one entry labelled "X.Y".
+ *   - Each remote v{X}.{Y}.x branch gets one entry labelled "X.Y".
  * A minor that is currently in master does NOT also appear as a v*.x
  * entry — that branch only exists after the minor is replaced in master.
  */
@@ -61,30 +61,40 @@ async function getRemoteBranches(cwd: string): Promise<string[]> {
 		.map((b) => b.replace('origin/', ''))
 }
 
+/**
+ * Each v{X}.{Y}.x branch on sandstone represents an archived minor (created by
+ * scripts/release.ts as `v${prevMinor}.x`, e.g. v1.0.x).
+ *
+ * Returns the bare `X.Y` minors, sorted ascending.
+ */
 async function getRemoteArchivedMinors(cwd: string): Promise<string[]> {
-	// Each v<X>.x branch on sandstone represents an archived minor.
-	// Unique sorted ascending by minor numeric.
 	const branches = await getRemoteBranches(cwd)
-	const minors = new Set<number>()
+	const minors = new Set<string>()
 	for (const b of branches) {
-		const m = b.match(/^v(\d+)\.x$/)
-		if (m) minors.add(parseInt(m[1]!, 10))
+		const m = b.match(/^v(\d+)\.(\d+)\.x$/)
+		if (m) minors.add(`${m[1]}.${m[2]}`)
 	}
-	return [...minors].sort((a, b) => a - b).map((n) => `v${n}.x`)
+	return [...minors].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
 }
 
-async function getMasterMinorFromPackageJson(): Promise<number | null> {
+/** The `X.Y` minor currently live in sandstone's master, or null. */
+async function getMasterMinorFromPackageJson(): Promise<string | null> {
 	try {
-		const result = await $`git -C ${sandstoneDir} show origin/master:sandstone/package.json`.quiet().nothrow()
+		const result = await $`git -C ${sandstoneDir} show origin/master:package.json`.quiet().nothrow()
 		if (result.exitCode !== 0) return null
 		const pkg = JSON.parse(result.stdout.toString()) as { version?: string }
 		if (!pkg.version) return null
-		const m = pkg.version.match(/^\d+\.(\d+)\./)
+		const m = pkg.version.match(/^(\d+)\.(\d+)\./)
 		if (!m) return null
-		return parseInt(m[1]!, 10)
+		return `${m[1]}.${m[2]}`
 	} catch {
 		return null
 	}
+}
+
+/** `1.0` -> the MC version string for sandstone minor 0. */
+function minorToMC(minor: string): string {
+	return sandstoneMinorToMCString(parseInt(minor.split('.')[1] ?? '0', 10))
 }
 
 async function templateBranchExists(type: TemplateType, minor: string): Promise<boolean> {
@@ -102,7 +112,14 @@ async function checkoutBranch(cwd: string, branch: string): Promise<{ ok: boolea
 	if (reset.exitCode !== 0) return { ok: false, error: reset.stderr.toString().trim() }
 	const clean = await $`git -C ${cwd} clean -fdx`.quiet().nothrow()
 	if (clean.exitCode !== 0) return { ok: false, error: clean.stderr.toString().trim() }
-	const checkout = await $`git -C ${cwd} checkout ${branch}`.quiet().nothrow()
+
+	// If the branch doesn't exist locally, create it tracking origin explicitly.
+	// A bare `git checkout <branch>` fails outright when more than one remote
+	// carries that branch (common when a contributor has a fork remote added).
+	const localExists = await $`git -C ${cwd} rev-parse --verify --quiet refs/heads/${branch}`.quiet().nothrow()
+	const checkout = localExists.exitCode === 0
+		? await $`git -C ${cwd} checkout ${branch}`.quiet().nothrow()
+		: await $`git -C ${cwd} checkout -b ${branch} --track origin/${branch}`.quiet().nothrow()
 	if (checkout.exitCode !== 0) return { ok: false, error: checkout.stderr.toString().trim() }
 	return { ok: true }
 }
@@ -111,7 +128,8 @@ function parseArgs(): { minor?: string; type: TemplateType; help: boolean } {
 	const args = process.argv.slice(2)
 	// Accept `1.0`, `1.0.0`, `v1.0`, or `1.0.x` as the positional minor arg.
 	const minor = args.find((a) => /^(v?\d+)\.(\d+)(\.(x|\d+))?$/.test(a))
-	const normalised = minor?.replace(/^v/, '').replace(/\.x$/, '')
+	// Normalise to the bare `X.Y` minor used as the candidate value.
+	const normalised = minor?.replace(/^v/, '').split('.').slice(0, 2).join('.')
 	return {
 		minor: normalised,
 		type: args.includes('--library') ? 'library' : 'pack',
@@ -157,9 +175,9 @@ async function main(): Promise<void> {
 	console.log('done')
 
 	const masterMinor = await getMasterMinorFromPackageJson()
-	const archivedBranches = await getRemoteArchivedMinors(sandstoneDir)
+	const archivedMinors = await getRemoteArchivedMinors(sandstoneDir)
 
-	if (masterMinor == null && archivedBranches.length === 0) {
+	if (masterMinor == null && archivedMinors.length === 0) {
 		console.error('Error: could not determine available minors.')
 		process.exit(1)
 	}
@@ -169,11 +187,10 @@ async function main(): Promise<void> {
 
 	// Master entry — current minor
 	if (masterMinor != null) {
-		const mc = sandstoneMinorToMCString(masterMinor)
 		candidates.push({
 			label: `Latest (master)`,
 			value: 'master',
-			description: `MC ${mc}`,
+			description: `MC ${minorToMC(masterMinor)}`,
 		})
 	}
 
@@ -181,19 +198,17 @@ async function main(): Promise<void> {
 	// matches master (the one in master has no v*.x branch yet, so this is just
 	// defensive: if for some reason origin/master's package.json lags and a
 	// v{masterMinor}.x branch already exists, skip it).
-	for (const branch of archivedBranches) {
-		const minorNum = parseInt(branch.match(/^v(\d+)\.x$/)![1]!, 10)
-		if (masterMinor != null && minorNum === masterMinor) continue
-		const exists = await templateBranchExists(type, `${minorNum}.0`)
-		const mc = sandstoneMinorToMCString(minorNum)
+	for (const minor of archivedMinors) {
+		if (minor === masterMinor) continue
+		const exists = await templateBranchExists(type, minor)
 		const candidate: CandidateMinor = {
-			label: `${minorNum}`,
-			value: `${minorNum}`,
-			description: `MC ${mc}`,
+			label: minor,
+			value: minor,
+			description: `MC ${minorToMC(minor)}`,
 		}
 		if (!exists) {
 			candidate.disabled = true
-			candidate.disabledReason = `no ${type}-${minorNum}.0 template branch yet`
+			candidate.disabledReason = `no ${type}-${minor}.0 template branch yet`
 		}
 		candidates.push(candidate)
 	}
@@ -206,10 +221,10 @@ async function main(): Promise<void> {
 	let chosen: CandidateMinor
 
 	if (requestedMinor) {
-		const normalised = requestedMinor.replace(/^v/, '').replace(/\.x$/, '')
-		const found = candidates.find((c) => c.value === normalised || c.value === 'master')
+		const found = candidates.find((c) => c.value === requestedMinor)
 		if (!found) {
-			console.error(`Error: minor ${requestedMinor} not found in available candidates.`)
+			const available = candidates.map((c) => c.value).join(', ')
+			console.error(`Error: minor ${requestedMinor} not found in available candidates (${available}).`)
 			process.exit(1)
 		}
 		if (found.disabled) {
@@ -231,13 +246,10 @@ async function main(): Promise<void> {
 
 	// Resolve target branches
 	const sandstoneTarget = chosen.value === 'master' ? 'master' : `v${chosen.value}.x`
+	// Baseline: `{type}-{minor}.0`. For master this is refined below to the
+	// highest existing `{type}-{masterMinor}.X` branch, if there is more than one.
 	const templateTarget = chosen.value === 'master'
-		? (() => {
-			// Pick the highest template branch matching master's minor
-			// (e.g., if master minor is 1.1, template should be pack-1.1.0
-			// OR pack-1.1.X if multiple patches exist — pick the highest).
-			return `pack-1.${masterMinor}.0` // default; refined below
-		})()
+		? `${type}-${masterMinor}.0`
 		: `${type}-${chosen.value}.0`
 
 	// For master, prefer the highest existing pack/library branch matching the master minor.
@@ -245,7 +257,7 @@ async function main(): Promise<void> {
 	if (chosen.value === 'master' && masterMinor != null) {
 		const allBranches = await getRemoteBranches(templateDir)
 		const matching = allBranches
-			.filter((b) => b.startsWith(`${type}-1.${masterMinor}.`) && /^\d+\.\d+\.\d+$/.test(b.split(`${type}-`)[1] ?? ''))
+			.filter((b) => b.startsWith(`${type}-${masterMinor}.`) && /^\d+\.\d+\.\d+$/.test(b.split(`${type}-`)[1] ?? ''))
 			.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
 		if (matching.length > 0) {
 			resolvedTemplateTarget = matching[0]!
