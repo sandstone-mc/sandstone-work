@@ -32,19 +32,26 @@ async function writePackageJson(dir: string, pkg: PackageJson): Promise<void> {
  * Resolve which npm dist-tag to restore against for a given package.
  *
  * - On master → `latest`
- * - On an archived `v{X}.x` branch → `v{X}.{minor}` (the per-minor dist-tag
- *   those patches publish to)
+ * - On an archived `v{X}.{Y}.x` branch → `<pkg-name>-X-Y` (the per-minor
+ *   dist-tag those patches publish to). The full version would be a valid
+ *   SemVer range, which npm rejects as a tag name, so we prefix the
+ *   package name and drop the dots (e.g. `sandstone-1-0`).
  * - Any other / unknown branch → fall back to `latest`
  */
-async function getChannelForBranch(repoDir: string): Promise<'latest' | string> {
+async function getChannelForBranch(repoDir: string, packageName: string): Promise<'latest' | string> {
   try {
     const branch = (await $`git -C ${repoDir} rev-parse --abbrev-ref HEAD`.text()).trim()
-    const m = branch.match(/^v(\d+)\.x$/)
+    const m = branch.match(/^v(\d+)\.(\d+)\.x$/)
     if (m) {
-      // v*.x branch — figure out the minor it archives from its first tag.
+      // v{X}.{Y}.x branch — figure out the minor it archives from its first tag.
       const tag = (await $`git -C ${repoDir} describe --tags --abbrev=0`.text()).trim()
       const tagMatch = tag.match(/^v(\d+)\.(\d+)/)
-      if (tagMatch) return `v${tagMatch[1]}.${tagMatch[2]}`
+      if (tagMatch) {
+        // strip the npm scope so `link:@sandstone-mc/...` resolves to the
+        // unscoped dist-tag namespace (npm doesn't preserve scope in tags)
+        const unscoped = packageName.replace(/^@[^/]+\//, '')
+        return `${unscoped}-${tagMatch[1]}-${tagMatch[2]}`
+      }
     }
   } catch {
     // fall through
@@ -57,8 +64,8 @@ async function getChannelForBranch(repoDir: string): Promise<'latest' | string> 
  * Returns the version prefixed with `^` for use in package.json.
  *
  * Returns null when the dist-tag is missing (e.g. a per-minor tag like
- * `v1.0` that hasn't been published yet), so the caller can fall back to
- * `latest` instead of erroring.
+ * `sandstone-1-0` that hasn't been published yet), so the caller can
+ * fall back to `latest` instead of erroring.
  */
 async function getNpmVersionForChannel(packageName: string, channel: string): Promise<string | null> {
   // The shortcut endpoint `/-/v1/tags/<tag>/package/<pkg>` returns 404
@@ -80,7 +87,7 @@ async function getNpmVersionForChannel(packageName: string, channel: string): Pr
  * been published yet.
  */
 async function getRestoreVersion(repoDir: string, packageName: string): Promise<string> {
-  const channel = await getChannelForBranch(repoDir)
+  const channel = await getChannelForBranch(repoDir, packageName)
   const versioned = await getNpmVersionForChannel(packageName, channel)
   if (versioned !== null) return versioned
   const fallback = await getNpmVersionForChannel(packageName, 'latest')
