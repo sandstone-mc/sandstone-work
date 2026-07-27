@@ -28,13 +28,51 @@ async function writePackageJson(dir: string, pkg: PackageJson): Promise<void> {
   await Bun.write(join(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
 }
 
-async function getLatestNpmVersion(packageName: string): Promise<string> {
-  const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`)
+/**
+ * Resolve which npm dist-tag to restore against for a given package.
+ *
+ * - On master → `latest`
+ * - On an archived `v{X}.x` branch → `v{X}.{minor}` (the per-minor dist-tag
+ *   those patches publish to)
+ * - Any other / unknown branch → fall back to `latest`
+ */
+async function getChannelForBranch(repoDir: string): Promise<'latest' | string> {
+  try {
+    const branch = (await $`git -C ${repoDir} rev-parse --abbrev-ref HEAD`.text()).trim()
+    const m = branch.match(/^v(\d+)\.x$/)
+    if (m) {
+      // v*.x branch — figure out the minor it archives from its first tag.
+      const tag = (await $`git -C ${repoDir} describe --tags --abbrev=0`.text()).trim()
+      const tagMatch = tag.match(/^v(\d+)\.(\d+)/)
+      if (tagMatch) return `v${tagMatch[1]}.${tagMatch[2]}`
+    }
+  } catch {
+    // fall through
+  }
+  return 'latest'
+}
+
+/**
+ * Fetch a version from a specific npm dist-tag for the given package.
+ * Returns the version prefixed with `^` for use in package.json.
+ */
+async function getNpmVersionForChannel(packageName: string, channel: string): Promise<string> {
+  const response = await fetch(`https://registry.npmjs.org/-/v1/tags/${encodeURIComponent(channel)}/package/${encodeURIComponent(packageName)}`)
   if (!response.ok) {
-    throw new Error(`Failed to fetch latest version for ${packageName}: ${response.statusText}`)
+    throw new Error(`Failed to fetch dist-tag ${channel} for ${packageName}: ${response.statusText}`)
   }
   const data = await response.json() as { version: string }
   return `^${data.version}`
+}
+
+/**
+ * Restore a package.json dep to the version published on the channel that
+ * matches the current git branch of that repo (master → latest, v*.x →
+ * per-minor dist-tag). Falls back to `latest` if channel resolution fails.
+ */
+async function getRestoreVersion(repoDir: string, packageName: string): Promise<string> {
+  const channel = await getChannelForBranch(repoDir)
+  return await getNpmVersionForChannel(packageName, channel)
 }
 
 async function directoryExists(path: string): Promise<boolean> {
@@ -185,13 +223,13 @@ async function unlink() {
     await $`bun unlink`.cwd(dir).nothrow()
   }
 
-  // Fetch latest versions from npm
-  console.log('\nFetching latest versions from npm...')
+  // Fetch restore versions from npm (branch-aware: master → latest, v*.x → per-minor dist-tag)
+  console.log('\nFetching versions from npm (channel depends on current branch)...')
   const [sandstoneVersion, cliVersion, hotHookVersion, mcdocTsGenVersion] = await Promise.all([
-    getLatestNpmVersion('sandstone'),
-    getLatestNpmVersion('sandstone-cli'),
-    getLatestNpmVersion('@sandstone-mc/hot-hook'),
-    getLatestNpmVersion('@sandstone-mc/mcdoc-ts-generator')
+    getRestoreVersion(sandstoneDir, 'sandstone'),
+    getRestoreVersion(cliDir, 'sandstone-cli'),
+    getRestoreVersion(hotHookDir, '@sandstone-mc/hot-hook'),
+    getRestoreVersion(mcdocTsGenDir, '@sandstone-mc/mcdoc-ts-generator')
   ])
   console.log(`  sandstone: ${sandstoneVersion}`)
   console.log(`  sandstone-cli: ${cliVersion}`)

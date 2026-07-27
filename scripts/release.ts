@@ -105,20 +105,150 @@ async function updateChangelog(
 /**
  * Increment version string
  * - `1.0.0` → `1.0.1`
- * - `1.0.0-beta.3` → `1.0.0-beta.4`
- * - `1.0.0-alpha.5` → `1.0.0-alpha.6`
+ *
+ * Prereleases are no longer used (no alpha/beta/rc — major 1 has shipped).
+ * If a tag ever lands as a prerelease form it would not be touched here.
  */
 function incrementVersion(version: string): string {
-    const prereleaseMatch = version.match(/^(.+)-([a-z]+)\.(\d+)$/i)
-    if (prereleaseMatch) {
-        const [, base, prerelease, num] = prereleaseMatch
-        return `${base}-${prerelease}.${parseInt(num) + 1}`
-    }
-
     const parts = version.split('.')
     const last = parseInt(parts[parts.length - 1])
     parts[parts.length - 1] = String(last + 1)
     return parts.join('.')
+}
+
+type ReleaseKind = 'patch' | 'minor'
+
+/**
+ * Decide whether this is a patch or a minor release for the given package.
+ *
+ * Only prompts when the user is on master and has NOT touched package.json
+ * (still matches the latest released tag). Otherwise the choice is implicit:
+ * - On an archived v*.x branch: always patch.
+ * - User edited package.json to X.Y.Z (Z > 0): patch.
+ * - User edited package.json to X.Y.0 with a different minor: minor.
+ * Returns `null` if user picked Cancel.
+ */
+async function askReleaseKind(info: PackageInfo): Promise<ReleaseKind | null> {
+    // Only meaningful for sandstone — other packages don't have archival branches.
+    if (info.name !== 'sandstone') return 'patch'
+
+    const branchResult = await $`git -C ${info.dir} rev-parse --abbrev-ref HEAD`.quiet().nothrow()
+    const currentBranch = branchResult.stdout.toString().trim()
+    const archivedBranch = /^v\d+\.x$/.test(currentBranch)
+
+    if (archivedBranch) {
+        // V*.x branches only support patches within that minor.
+        return 'patch'
+    }
+
+    // Check if user changed package.json: pkgVer vs latestVer
+    const latestVerMatch = info.latestTag?.match(/^v(\d+)\.(\d+)\.(\d+)$/)
+    const pkgMatch = info.version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+    if (!latestVerMatch || !pkgMatch) return 'patch'
+
+    const [, latestMaj, latestMin] = latestVerMatch
+    const [, pkgMaj, pkgMin, pkgPatch] = pkgMatch
+    const userChangedVersion = info.version !== info.latestTag?.replace(/^v/, '')
+
+    if (userChangedVersion) {
+        // User has expressed intent in package.json — respect it.
+        if (pkgPatch === '0' && pkgMaj === latestMaj && pkgMin !== latestMin) {
+            return 'minor'
+        }
+        return 'patch'
+    }
+
+    // User hasn't touched package.json and is on master — prompt.
+    const choices: Array<{ name: string; value: ReleaseKind | 'cancel' }> = [
+        {
+            name: `Patch release in current minor (${info.version} → ${pkgMaj}.${pkgMin}.${parseInt(pkgPatch ?? '0') + 1})`,
+            value: 'patch',
+        },
+        {
+            name: `New minor release (${info.version} → ${pkgMaj}.${parseInt(pkgMin ?? '0') + 1}.0; creates v${latestMaj}.${latestMin}.x archival branch + pack/library ${pkgMaj}.${parseInt(pkgMin ?? '0') + 1}.0 template branches)`,
+            value: 'minor',
+        },
+        { name: 'Cancel', value: 'cancel' },
+    ]
+    const choice = await select({
+        message: 'What kind of release is this?',
+        choices,
+        default: 'patch',
+    })
+    return choice === 'cancel' ? null : choice
+}
+
+/**
+ * After a successful sandstone minor release, create the previous-minor
+ * archival branch on sandstone (e.g. v1.1.x) and matching pack/library
+ * template branches (pack-1.2.0, library-1.2.0).
+ *
+ * Silent on errors and on existing branches — never fails the release.
+ */
+async function createMinorBranches(packageDir: string, prevMinor: string, newMinor: string): Promise<void> {
+    const templateDir = resolve(import.meta.dir, '..', 'sandstone-template')
+
+    // 1. Sandstone: create v{prevMinor}.x from the previous tag's commit.
+    try {
+        const prevTagResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$' | head -n2 | tail -n1`.quiet().nothrow()
+        const prevTag = prevTagResult.stdout.toString().trim()
+        if (!prevTag) {
+            console.log(`⚠️  Could not determine previous tag; skipping v${prevMinor}.x`)
+        } else {
+            const existsCheck = await $`git -C ${packageDir} ls-remote --heads origin v${prevMinor}.x`.quiet().nothrow()
+            if (existsCheck.stdout.toString().trim().length > 0) {
+                console.log(`ℹ️  v${prevMinor}.x already exists on remote; skipping creation`)
+            } else {
+                console.log(`🌿 Creating v${prevMinor}.x from ${prevTag}...`)
+                const branchCreate = await $`git -C ${packageDir} branch v${prevMinor}.x ${prevTag}`.quiet().nothrow()
+                if (branchCreate.exitCode === 0) {
+                    await $`git -C ${packageDir} push -u origin v${prevMinor}.x`.quiet().nothrow()
+                    console.log(`✅ Pushed v${prevMinor}.x`)
+                } else {
+                    console.log(`⚠️  Failed to create v${prevMinor}.x branch: ${branchCreate.stderr.toString().trim()}`)
+                }
+            }
+        }
+    } catch (e) {
+        console.log(`⚠️  v${prevMinor}.x creation failed: ${(e as Error).message ?? e}`)
+    }
+
+    // 2. Template: create pack-{newMinor}.0 and library-{newMinor}.0.
+    if (!existsSync(templateDir)) {
+        console.log('ℹ️  Template repo not found; skipping template branch creation')
+        return
+    }
+    for (const type of ['pack', 'library'] as const) {
+        const target = `${type}-${newMinor}.0`
+        const source = `${type}-${prevMinor}.0`
+        try {
+            const sourceExists = await $`git -C ${templateDir} ls-remote --heads origin ${source}`.quiet().nothrow()
+            if (sourceExists.stdout.toString().trim().length === 0) {
+                console.log(`⚠️  ${source} does not exist on template remote; skipping ${target}`)
+                continue
+            }
+            const targetExists = await $`git -C ${templateDir} ls-remote --heads origin ${target}`.quiet().nothrow()
+            if (targetExists.stdout.toString().trim().length > 0) {
+                console.log(`ℹ️  ${target} already exists on remote; skipping`)
+                continue
+            }
+            console.log(`🌿 Creating template ${target} from ${source}...`)
+            const fetch = await $`git -C ${templateDir} fetch origin ${source}`.quiet().nothrow()
+            if (fetch.exitCode !== 0) {
+                console.log(`⚠️  Failed to fetch ${source}: ${fetch.stderr.toString().trim()}`)
+                continue
+            }
+            const branchCreate = await $`git -C ${templateDir} branch ${target} origin/${source}`.quiet().nothrow()
+            if (branchCreate.exitCode === 0) {
+                await $`git -C ${templateDir} push -u origin ${target}`.quiet().nothrow()
+                console.log(`✅ Pushed ${target}`)
+            } else {
+                console.log(`⚠️  Failed to create ${target} branch: ${branchCreate.stderr.toString().trim()}`)
+            }
+        } catch (e) {
+            console.log(`⚠️  ${target} creation failed: ${(e as Error).message ?? e}`)
+        }
+    }
 }
 
 async function getPackageInfo(name: string, config: PackageConfig): Promise<PackageInfo | null> {
@@ -255,6 +385,12 @@ async function interactiveMode() {
         console.log(`📄 Body: ${body.split('\n')[0]}${body.includes('\n') ? '...' : ''}`)
     }
 
+    const kind = await askReleaseKind(selectedPackage)
+    if (kind === null) {
+        console.log('❌ Release cancelled.')
+        return
+    }
+
     const confirmed = await confirm({
         message: 'Proceed with release?',
         default: true,
@@ -266,10 +402,10 @@ async function interactiveMode() {
     }
 
     console.log('')
-    await release(selectedPackage.name, selectedPackage.config, title, body)
+    await release(selectedPackage.name, selectedPackage.config, title, body, kind)
 }
 
-async function release(packageName: string, pkg: PackageConfig, title: string, body?: string) {
+async function release(packageName: string, pkg: PackageConfig, title: string, body?: string, kind: ReleaseKind = 'patch') {
     const packageDir = resolve(import.meta.dir, '..', pkg.dir)
     if (!existsSync(packageDir)) {
         console.error(`Package directory not found: ${packageDir}`)
@@ -281,18 +417,29 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
     const packageJson = await Bun.file(packageJsonPath).json()
     let version: string = packageJson.version
 
-    // Check if tag already exists, auto-increment if needed
+    // For 'patch' kinds, auto-increment if a tag with the same version already
+    // exists. For 'minor', respect the user-set version as-is — they have
+    // already edited package.json to the new minor release.
     let tag = `v${version}`
-    let existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
-
-    while (existingTag.trim()) {
-        console.log(`⚠️  Tag ${tag} already exists, incrementing version...`)
-        version = incrementVersion(version)
-        tag = `v${version}`
-        existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
+    if (kind === 'patch') {
+        let existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
+        while (existingTag.trim()) {
+            console.log(`⚠️  Tag ${tag} already exists, incrementing version...`)
+            version = incrementVersion(version)
+            tag = `v${version}`
+            existingTag = await $`git -C ${packageDir} tag -l ${tag}`.text()
+        }
+    } else {
+        // minor kind: tag must not already exist; abort if it does
+        const existingTag = (await $`git -C ${packageDir} tag -l ${tag}`.text()).trim()
+        if (existingTag) {
+            console.error(`❌ Tag ${tag} already exists. Cannot release as a new minor without bumping version.`)
+            console.error(`   Edit package.json to a new X.Y.0 version and try again.`)
+            process.exit(1)
+        }
     }
 
-    // Update package.json if version changed
+    // Update package.json if version changed (only happens for patch mode)
     if (version !== packageJson.version) {
         packageJson.version = version
         await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n')
@@ -340,19 +487,44 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
     console.log('')
     console.log(`✅ Released ${packageName} ${tag}`)
     console.log(`   GitHub Actions will now build and publish to npm.`)
+
+    // For sandstone minor releases: create archival branch + template branches.
+    if (packageName === 'sandstone' && kind === 'minor') {
+        const versionMatch = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+        if (versionMatch) {
+            const newMinor = `${versionMatch[1]}.${versionMatch[2]}`
+            // previous minor in the form X.(Y-1) — fall back to direct lookup
+            // of the highest tagged version BEFORE the just-released tag.
+            const allTags = (await $`git -C ${packageDir} tag --sort=-v:refname | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$'`.text())
+                .split('\n').map((t) => t.trim()).filter(Boolean)
+            const prevTag = allTags.find((t) => t !== tag)
+            if (prevTag) {
+                const prevMatch = prevTag.match(/^v(\d+)\.(\d+)\./)
+                if (prevMatch) {
+                    const prevMinor = `${prevMatch[1]}.${prevMatch[2]}`
+                    await createMinorBranches(packageDir, prevMinor, newMinor)
+                }
+            }
+        }
+    }
 }
 
 async function cliMode(args: string[]) {
     if (args.length < 2) {
-        console.error('Usage: bun scripts/release.ts <package> <title> [body]')
+        console.error('Usage: bun scripts/release.ts <package> <title> [body] [--minor]')
         console.error('')
         console.error('Packages:', Object.keys(PACKAGES).join(', '))
+        console.error('')
+        console.error('Flags:')
+        console.error('  --minor   Release as a new minor (triggers archival branch creation)')
         console.error('')
         console.error('Or run without arguments for interactive mode.')
         process.exit(1)
     }
 
-    const [packageName, title, body] = args
+    const kind: ReleaseKind = args.includes('--minor') ? 'minor' : 'patch'
+    const filtered = args.filter((a) => a !== '--minor')
+    const [packageName, title, body] = filtered
 
     const pkg = PACKAGES[packageName]
     if (!pkg) {
@@ -361,7 +533,7 @@ async function cliMode(args: string[]) {
         process.exit(1)
     }
 
-    await release(packageName, pkg, title, body)
+    await release(packageName, pkg, title, body, kind)
 }
 
 async function main() {

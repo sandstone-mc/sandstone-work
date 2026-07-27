@@ -64,7 +64,56 @@ bun dev:template              # Checkout latest pack template (e.g., pack-0.9.0)
 bun dev:template --library    # Checkout latest library template
 ```
 
-Template branches follow semver: `pack-X.Y.Z` or `library-X.Y.Z`. The script finds the highest version and checks it out.
+Template branches are always `pack-X.Y.0` or `library-X.Y.0` (one branch per minor, the patch slot is always `0` — the template tracks the sandstone minor, not individual patches). The script finds the highest version and checks it out.
+
+### `bun dev:minor` — Switch Minor Version
+
+Switch sandstone + template to a different minor (current master or an archived `v{X}.x` branch). CLI / generator / hot-hook / libraries stay on master regardless.
+
+```bash
+bun dev:minor                # Interactive: pick a minor
+bun dev:minor 1.0            # Switch to archived 1.0.x + pack-1.0.0
+bun dev:minor 1.0 --library  # Switch to 1.0.x + library-1.0.0
+```
+
+Each candidate is listed **exactly once**. The currently-active minor in master appears as `Latest (master) → MC 26.{n}`; every remote `v{X}.x` branch appears as `{X} → MC 26.{m}`. The two never collide — a minor's `v*.x` branch only exists after that minor leaves master.
+
+Just checks out + bun-installs; doesn't build or link. Run `bun dev:link` separately if needed.
+
+### Branching & npm dist-tag Model
+
+| Branch | npm dist-tag | Resolves to |
+|--------|--------------|-------------|
+| `master` (sandstone) | `latest` | Highest master version |
+| `v1.0.x` (sandstone) | `v1.0` | Highest 1.0.x patch |
+| `v1.1.x` (sandstone) | `v1.1` | Highest 1.1.x patch |
+| future `v*.x` | `v{X}.{Y}` | Per-minor channel |
+
+This keeps `sandstone@latest` pristine regardless of activity on archived branches. CLI (`sandstone-cli`) and generator (`@sandstone-mc/mcdoc-ts-generator`) are minor-agnostic — they only publish to `latest`.
+
+### MC Version Correlation
+
+Sandstone `1.{minor}.*` ↔ MC `(26 + floor(minor/4)).((minor % 4) + 1)`:
+
+- `1.0.x` → MC 26.1
+- `1.1.x` → MC 26.2
+- `1.2.x` → MC 26.3
+- `1.3.x` → MC 26.4
+- `1.4.x` → MC 27.1
+- `1.5.x` → MC 27.2
+- … (4 MC bases per year)
+
+Implemented inline in `scripts/sandstoneToMC.ts` (workspace) and `sandstone-cli/src/utils/sandstoneToMC.ts` (CLI). Major 2 is out of scope and will be added when shipped.
+
+### Patch Auto-Increment + Minor Decision
+
+Patches are auto-incremented within the current minor (the release script does this on tag collision). To cut a new minor:
+
+1. Edit package.json to the next `X.Y.0` version
+2. Run `bun release` and pick **"New minor release"** in the prompt (or pass `--minor` in CLI mode)
+3. The release script also creates the previous-minor's archival branch (`v{X-1}.x`) and matching `pack/library-{X}.0` template branches
+
+There are no prereleases (no alpha/beta/rc) — major 1 has shipped. Snapshots are ignored: even when MC is mid-snapshot-cycle, the next MC base is treated as already-released in sandstone's master.
 
 ### `bun dev:link` / `bun dev:unlink` — Local Package Linking
 
@@ -72,7 +121,7 @@ Links local packages together for development so changes propagate without publi
 
 ```bash
 bun dev:link      # Link local packages for development
-bun dev:unlink    # Restore npm versions (fetches latest from registry)
+bun dev:unlink    # Restore npm versions (branch-aware: master → latest, v{X}.x → v{X}.{Y} dist-tag)
 ```
 
 **Link chain:**
@@ -87,6 +136,8 @@ When linked:
 - Builds each package if not already built (`dist/`, `lib/`, or `build/` missing)
 - Registers packages globally with `bun link`
 - Links dependencies between packages with `bun link <package> --save`
+
+`bun dev:unlink` is **branch-aware**: when run on master it restores to npm `latest`; when run on an archived `v{X}.x` branch it restores each package to its `v{X}.{Y}` dist-tag (the per-minor channel those patches publish to). So `bun dev:link` / `bun dev:unlink` works correctly regardless of which minor branch you're on.
 
 Always run `bun dev:unlink` before committing changes to any package.json files.
 
@@ -109,12 +160,14 @@ bun dev:build
 ### Iterating on the Core Library
 
 1. Run `bun run setup` to clone all repos
-2. Run `bun dev:template` to checkout a template branch
+2. Run `bun dev:template` to checkout a template branch (defaults to latest minor — e.g., `pack-1.1.0`)
 3. Run `bun dev:link` to link packages locally
 4. Make changes in `sandstone/src/`
 5. From the workspace root, rebuild with `bun dev:build:library`
 6. Test in `sandstone-template/` with `bun dev:build`
 7. Before committing: `bun dev:unlink` in workspace root
+
+**To iterate against an archived minor** (e.g., to patch v1.0.x): run `bun dev:minor 1.0` *before* `bun dev:link`. The link/unlink scripts are branch-aware — they restore to `sandstone@v1.0` (and friends) when checked out to that branch.
 
 ### Iterating on the CLI
 
