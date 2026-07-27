@@ -17,6 +17,7 @@ import { $ } from 'bun'
 import { existsSync, unlinkSync } from 'fs'
 import { resolve } from 'path'
 import { select, input, editor, confirm } from '@inquirer/prompts'
+import { sandstoneMinorToMC } from './sandstoneToMC.ts'
 
 interface PackageConfig {
     dir: string
@@ -247,6 +248,100 @@ async function createMinorBranches(packageDir: string, prevMinor: string, newMin
             }
         } catch (e) {
             console.log(`⚠️  ${target} creation failed: ${(e as Error).message ?? e}`)
+        }
+    }
+
+    // 3. Template repo's main-branch README gets a new section pointing at
+    // the new pack-/library-X.Y.0 branches. Newest section goes on top.
+    await updateTemplateReadme(newMinor, prevMinor)
+}
+
+/**
+ * Append a new "### X.Y.0 Templates (MC X.Y)" section to the sandstone-template
+ * repo's main-branch README, pointing at the new pack-/library-X.Y.0 branches.
+ * Newest section at the top (after the intro paragraph).
+ *
+ * Best-effort: any failure logs a warning but does NOT fail the release.
+ * Restores the template repo to the branch the user was on at the start.
+ */
+async function updateTemplateReadme(newMinor: string, prevMinor: string) {
+    const templateDir = resolve(import.meta.dir, '..', 'sandstone-template')
+    if (!existsSync(templateDir)) {
+        console.log('ℹ️  Template repo not found locally; skipping README update')
+        return
+    }
+
+    // Remember the branch the user was on; restore at the end.
+    const originalRef = (await $`git -C ${templateDir} rev-parse --abbrev-ref HEAD`.quiet().text()).trim()
+    const originalBranch = originalRef === 'HEAD' ? null : originalRef
+
+    const minorNum = parseInt(newMinor.split('.')[1] ?? '0', 10)
+    const { mcMajor, mcMinor } = sandstoneMinorToMC(minorNum)
+    const mcVersion = `${mcMajor}.${mcMinor}`
+
+    const checkout = await $`git -C ${templateDir} checkout main`.quiet().nothrow()
+    if (checkout.exitCode !== 0) {
+        console.log(`⚠️  Could not checkout main on template (exit ${checkout.exitCode}); skipping README update`)
+        return
+    }
+
+    const readmePath = resolve(templateDir, 'README.md')
+    let readme: string
+    try {
+        readme = await Bun.file(readmePath).text()
+    } catch {
+        console.log('⚠️  No README.md on template main; skipping')
+        if (originalBranch) await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        return
+    }
+
+    const heading = `### ${newMinor}.0 Templates (MC ${mcVersion})`
+    if (readme.includes(heading)) {
+        console.log(`ℹ️  Template README already has section for ${newMinor}.0; skipping`)
+        if (originalBranch) await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        return
+    }
+
+    const newSection =
+        `${heading}\n` +
+        `- [Pack](https://github.com/sandstone-mc/sandstone-template/tree/pack-${newMinor}.0) \`pack-${newMinor}.0\`\n` +
+        `- [Library](https://github.com/sandstone-mc/sandstone-template/tree/library-${newMinor}.0) \`library-${newMinor}.0\`\n` +
+        `\n`
+
+    // Insert after the intro paragraph (heading line + 1-2 intro lines + blank line).
+    const introMatch = readme.match(/^# [^\n]*\n+(?:[^\n]*\n)*?\n/)
+    const updated =
+        introMatch != null
+            ? readme.slice(0, introMatch.index! + introMatch[0].length) +
+              newSection +
+              readme.slice(introMatch.index! + introMatch[0].length)
+            : readme + newSection
+
+    await Bun.write(readmePath, updated)
+
+    await $`git -C ${templateDir} add -A`.quiet().nothrow()
+    const commit = await $`git -C ${templateDir} commit -m ${`⬆️ Add ${newMinor}.0 templates to README`}`.quiet().nothrow()
+    if (commit.exitCode !== 0) {
+        console.log(`⚠️  Template README commit failed: ${commit.stderr.toString().trim()}`)
+        if (originalBranch) await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        return
+    }
+    const push = await $`git -C ${templateDir} push`.quiet().nothrow()
+    if (push.exitCode !== 0) {
+        console.log(`⚠️  Template README push failed: ${push.stderr.toString().trim()}`)
+        if (originalBranch) await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        return
+    }
+    console.log(`✅ Updated template README on main (added ${newMinor}.0 / MC ${mcVersion})`)
+
+    // Restore the template repo to whatever branch the user was on before
+    // we checked out main for the README edit.
+    if (originalBranch && originalBranch !== 'main') {
+        const restore = await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        if (restore.exitCode === 0) {
+            console.log(`ℹ️  Restored template repo to ${originalBranch}`)
+        } else {
+            console.log(`⚠️  Could not restore template to ${originalBranch}: ${restore.stderr.toString().trim()}`)
         }
     }
 }
@@ -487,6 +582,15 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
     console.log('')
     console.log(`✅ Released ${packageName} ${tag}`)
     console.log(`   GitHub Actions will now build and publish to npm.`)
+
+    // After a CLI release, remind the user to bump the CLI in all maintained
+    // template branches — the template's CLI dep is pinned at create-time
+    // and needs updating outside of this release script's scope.
+    if (packageName === 'cli') {
+        console.log('')
+        console.log(`💡 Don't forget to bump the CLI in maintained template branches:`)
+        console.log(`   bun template:cli-update`)
+    }
 
     // For sandstone minor releases: create archival branch + template branches.
     if (packageName === 'sandstone' && kind === 'minor') {

@@ -19,7 +19,8 @@
     "dev:unlink": "bun run scripts/link.ts unlink",
     "dev:build:library": "cd sandstone && bun dev:build",
     "dev:build:template": "cd sandstone-template && bun dev:build",
-    "release": "bun run scripts/release.ts"
+    "release": "bun run scripts/release.ts",
+    "template:cli-update": "bun run scripts/template-cli-update.ts"
   },
   "type": "module"
 }
