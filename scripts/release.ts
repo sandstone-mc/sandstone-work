@@ -194,12 +194,12 @@ export async function createMinorBranches(packageDir: string, prevMinor: string,
         // Bun's $ shell passes single-quoted "..." verbatim — \\. inside '...' reaches
         // grep as \\. (literal backslash + any char), so the regex never matches.
         // Use double-quoted "..." so \\. collapses to \. (escaped dot) for grep.
-        const prevTagResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$" | head -n2 | tail -n1`.nothrow()
+        const prevTagResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$" | head -n2 | tail -n1`.quiet().nothrow()
         const prevTag = prevTagResult.stdout.toString().trim()
         if (!prevTag) {
             console.log(`⚠️  Could not determine previous tag; skipping v${prevMinor}.x`)
         } else {
-            const existsCheck = await $`git -C ${packageDir} ls-remote --heads origin v${prevMinor}.x`.nothrow()
+            const existsCheck = await $`git -C ${packageDir} ls-remote --heads origin v${prevMinor}.x`.quiet().nothrow()
             if (existsCheck.stdout.toString().trim().length > 0) {
                 console.log(`ℹ️  v${prevMinor}.x already exists on remote; skipping creation`)
             } else {
@@ -226,12 +226,12 @@ export async function createMinorBranches(packageDir: string, prevMinor: string,
         const target = `${type}-${newMinor}.0`
         const source = `${type}-${prevMinor}.0`
         try {
-            const sourceExists = await $`git -C ${templateDir} ls-remote --heads origin ${source}`.nothrow()
+            const sourceExists = await $`git -C ${templateDir} ls-remote --heads origin ${source}`.quiet().nothrow()
             if (sourceExists.stdout.toString().trim().length === 0) {
                 console.log(`⚠️  ${source} does not exist on template remote; skipping ${target}`)
                 continue
             }
-            const targetExists = await $`git -C ${templateDir} ls-remote --heads origin ${target}`.nothrow()
+            const targetExists = await $`git -C ${templateDir} ls-remote --heads origin ${target}`.quiet().nothrow()
             if (targetExists.stdout.toString().trim().length > 0) {
                 console.log(`ℹ️  ${target} already exists on remote; skipping`)
                 continue
@@ -609,7 +609,7 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
             }
             const newMinor = `${versionMatch[1]}.${versionMatch[2]}`
 
-            const allTagsResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$"`.nothrow()
+            const allTagsResult = await $`git -C ${packageDir} tag --sort=-v:refname | grep -E "^v[0-9]+\\.[0-9]+\\.[0-9]+$"`.quiet().nothrow()
             if (allTagsResult.exitCode !== 0) {
                 console.log(`⚠️  Failed to list tags: ${allTagsResult.stderr.toString().trim()}; skipping branch creation`)
                 return
