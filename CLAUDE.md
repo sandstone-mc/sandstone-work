@@ -155,6 +155,20 @@ From `sandstone/`:
 bun dev:build
 ```
 
+For the full inner-build → template-rebuild cycle (when iterating on
+`sandstone/` against a template), the canonical command is the
+`&&`-chained one-liner — chaining across `cd` works because each
+command runs to completion before the next:
+
+```bash
+cd /var/home/mulverine/Workspaces/sandstone-work/sandstone && bun dev:build --silent && cd ../sandstone-template && bun dev:build
+```
+
+The `--silent` flag is for `sandstone`'s build (matches what the
+project's own CLAUDE.md in `sandstone/` recommends); the template build
+runs without it because its build output is useful to see (visitor
+warnings, etc.).
+
 ## Development Workflow
 
 ### Iterating on the Core Library

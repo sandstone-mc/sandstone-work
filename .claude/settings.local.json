@@ -3,7 +3,8 @@
     "allow": [
       "mcp__ide__getDiagnostics",
       "Bash(bun dev:watch)",
-      "Bash(bun dev:build)"
+      "Bash(bun dev:build)",
+      "Bash(bun dev:build --silent)"
     ]
   }
 }
