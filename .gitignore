@@ -10,3 +10,5 @@ sandstone-documentation/
 sandstone-libraries/
 sandstone-playground/
 sandstone-template/
+
+.temp/
