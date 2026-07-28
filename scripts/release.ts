@@ -546,6 +546,21 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
         packageJson.version = version
         await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n')
         console.log(`📝 Updated package.json to version ${version}`)
+
+        // For the CLI, bumping package.json alone leaves src/version.ts stale
+        // (the bundle script reads version from package.json and writes it to
+        // src/version.ts). Run `bun dev:build` so the change propagates before
+        // tagging.
+        if (packageName === 'cli') {
+            console.log('🔨 Rebuilding CLI to refresh version.ts...')
+            const build = await $`bun run dev:build`.cwd(packageDir).quiet().nothrow()
+            if (build.exitCode !== 0) {
+                console.log(`⚠️  dev:build failed; src/version.ts may be out of sync with package.json`)
+                console.log(build.stderr.toString().trim())
+            } else {
+                console.log('✅ Rebuilt CLI')
+            }
+        }
     }
 
     // Get latest tag for changelog compare link
