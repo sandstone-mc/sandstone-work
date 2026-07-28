@@ -9,7 +9,8 @@
     "sandstone-documentation": true,
     "sandstone-libraries": true,
     "sandstone-playground": true,
-    "sandstone-template": true
+    "sandstone-template": true,
+    "sandstone-demo": true,
   },
   "editor.tabSize": 2
 }

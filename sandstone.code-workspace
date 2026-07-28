@@ -35,6 +35,10 @@
 		{
 			"name": "template",
 			"path": "sandstone-template"
+		},
+		{
+			"name": "demo",
+			"path": "sandstone-demo"
 		}
 	],
 	"settings": {}
