@@ -320,6 +320,11 @@ async function main(): Promise<void> {
 	const failed = results.filter((r) => r.error).length
 	console.log(`\nSummary: ${changed} updated · ${skipped} skipped · ${failed} failed`)
 
+	if (changed > 0) {
+		console.log(`\nFetching updated template branches…`)
+		await fetchTemplate()
+	}
+
 	// Only restore the user's original branch if work was actually done. A
 	// pure dry-run / no-op run leaves their CWD alone.
 	const didWork = changed > 0
