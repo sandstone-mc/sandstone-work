@@ -2,16 +2,20 @@
  * Update the `sandstone` dep in every maintained template branch
  * (pack-X.Y.0 and library-X.Y.0) to match the right channel:
  *
- *   - The template for the LATEST minor (highest X.Y across all
- *     pack-X.Y.0 / library-X.Y.0 branches) gets bumped to
- *     `^<workspace-sandstone-version>` — the in-development master.
- *     This mirrors what the cli-update script does in a single repo.
+ *   - The template for the LIVE minor (the X.Y that npm's `@latest` is
+ *     currently on) gets bumped to `^<@latest version>`. There is no
+ *     per-minor dist-tag for the live minor — `@latest` IS its channel.
  *   - Every other template branch gets bumped to the per-minor dist-tag
  *     `sandstone-{X}-{Y}` (e.g. a 1.1 template gets `sandstone-1-1`).
  *     The actual version is resolved from npm so the lockfile pins a
- *     real SemVer, not the tag.
- *     Branches whose per-minor dist-tag hasn't been published yet are
- *     skipped with a warning (no commit, no push).
+ *     real SemVer, not the tag. If the per-minor tag isn't published
+ *     yet, the highest `X.Y.*` version on npm is used as a fallback.
+ *     Branches with no published version for that minor are skipped
+ *     with a warning (no commit, no push).
+ *
+ * The script is fully self-contained: it queries npm for all version
+ * data and only touches the template repo on disk. It does not read
+ * the local `sandstone/` checkout — workspace state is irrelevant.
  *
  * Usage:
  *   bun template:sandstone-update             # interactive: confirm + iterate
@@ -31,9 +35,7 @@ import { $ } from 'bun'
 import { access, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 
-const rootDir = join(import.meta.dir, '..')
-const sandstoneDir = join(rootDir, 'sandstone')
-const templateDir = join(rootDir, 'sandstone-template')
+const templateDir = join(import.meta.dir, '..', 'sandstone-template')
 
 async function fileExists(path: string): Promise<boolean> {
 	try {
@@ -42,16 +44,6 @@ async function fileExists(path: string): Promise<boolean> {
 	} catch {
 		return false
 	}
-}
-
-async function getWorkspaceSandstoneVersion(): Promise<string> {
-	if (!(await fileExists(join(sandstoneDir, 'package.json')))) {
-		throw new Error(`sandstone not found at ${sandstoneDir}. Run \`bun run setup\` first.`)
-	}
-	const pkgRaw = await readFile(join(sandstoneDir, 'package.json'), 'utf8')
-	const { version } = JSON.parse(pkgRaw) as { version: string }
-	if (!version) throw new Error('sandstone/package.json has no version')
-	return version
 }
 
 async function fetchTemplate(): Promise<void> {
@@ -97,50 +89,82 @@ function parseMinor(branch: string): { major: number; minor: number; minorKey: s
 }
 
 /**
- * Highest minor (X.Y) across all maintained pack-X.Y.0 / library-X.Y.0
- * branches. Pack + library share the same minor schedule so we don't
- * separate them — the latest minor's template branch is the latest minor.
+ * X.Y minor of a SemVer version (e.g. "1.0" for "1.0.8"). Returns null
+ * if the string isn't a recognisable version.
  */
-function highestMinor(branches: string[]): string | null {
-	let best: { major: number; minor: number; key: string } | null = null
-	for (const b of branches) {
-		const parsed = parseMinor(b)
-		if (!parsed) continue
-		if (best === null || parsed.major > best.major || (parsed.major === best.major && parsed.minor > best.minor)) {
-			best = { major: parsed.major, minor: parsed.minor, key: parsed.minorKey }
-		}
-	}
-	return best?.key ?? null
+function minorOf(version: string): string | null {
+	const m = version.match(/^(\d+)\.(\d+)(?:\.\d+)?/)
+	if (!m) return null
+	return `${m[1]}.${m[2]}`
 }
 
 /**
- * Resolve an npm dist-tag to its actual published version. Returns null
- * when the tag isn't on the registry (e.g. a per-minor tag that hasn't
- * been published yet, or a typo).
- *
- * npm's shortcut endpoint `/-/v1/tags/<tag>/package/<pkg>` 404s even for
- * tags that exist, so we always fetch the full package document and read
- * from the dist-tags map.
+ * npm package document for `sandstone`. Holds the dist-tags map and the
+ * full versions list — everything we need to decide what version each
+ * template branch should pin to without ever touching the workspace.
  */
-async function resolveDistTag(packageName: string, tag: string): Promise<string | null> {
-	const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`)
+interface NpmSandstone {
+	distTags: Record<string, string> // e.g. { latest: "1.2.8", "sandstone-1-0": "1.0.8", ... }
+	versions: string[] // every published version, may include prereleases
+	latestVersion: string // distTags.latest — the live version
+	latestMinor: string // X.Y of latestVersion, e.g. "1.2"
+	/** Version to pin a template for the given major.minor to. */
+	resolveForMinor(major: number, minor: number): { version: string; via: 'dist-tag' | 'fallback' } | null
+}
+
+/**
+ * Fetch the full sandstone npm document and wrap it in helpers.
+ * The doc is fetched once and reused for every branch decision.
+ */
+async function fetchSandstoneNpm(): Promise<NpmSandstone> {
+	const response = await fetch('https://registry.npmjs.org/sandstone')
 	if (!response.ok) {
-		throw new Error(`Failed to fetch package metadata for ${packageName}: ${response.statusText}`)
+		throw new Error(`Failed to fetch sandstone metadata: ${response.statusText}`)
 	}
-	const data = await response.json() as { 'dist-tags'?: Record<string, string> }
-	return data['dist-tags']?.[tag] ?? null
+	const data = await response.json() as { 'dist-tags'?: Record<string, string>; versions?: Record<string, unknown> }
+	const distTags = data['dist-tags'] ?? {}
+	const versions = Object.keys(data.versions ?? {})
+	const latestVersion = distTags.latest
+	if (!latestVersion) {
+		throw new Error('sandstone npm doc has no `latest` dist-tag — refusing to proceed')
+	}
+	const latestMinorKey = minorOf(latestVersion)
+	if (latestMinorKey === null) {
+		throw new Error(`sandstone @latest version "${latestVersion}" is not a recognisable SemVer`)
+	}
+	return {
+		distTags,
+		versions,
+		latestVersion,
+		latestMinor: latestMinorKey,
+		resolveForMinor(major, minor) {
+			const tag = `sandstone-${major}-${minor}`
+			const tagged = distTags[tag]
+			if (tagged) return { version: tagged, via: 'dist-tag' }
+			// Fallback: highest published X.Y.* version (stable patches only —
+			// prereleases would surprise users on `bun install`).
+			const prefix = `${major}.${minor}.`
+			const patches = versions
+				.filter((v) => v.startsWith(prefix) && !v.includes('-'))
+				.map((v) => Number(v.slice(prefix.length)))
+				.filter((n) => Number.isFinite(n))
+				.sort((a, b) => b - a)
+			if (patches.length === 0) return null
+			return { version: `${major}.${minor}.${patches[0]}`, via: 'fallback' }
+		},
+	}
 }
 
 interface FileChange {
 	path: string // relative to templateDir, e.g. "package.json"
 	oldVersion: string | null // null if no sandstone dep was present
 	newVersion: string // the version we tried to set (e.g. "^1.2.3")
-	via: 'workspace' | `dist-tag:${string}` // provenance for the summary
+	via: 'latest' | `dist-tag:${string}` | 'fallback' // provenance for the summary
 }
 
 interface BranchResult {
 	branch: string
-	channel: 'workspace' | `dist-tag:${string}` | 'skipped-no-tag'
+	channel: 'latest' | `dist-tag:${string}` | 'fallback' | 'skipped-no-tag'
 	fileChanges: FileChange[]
 	committed: boolean
 	error?: string
@@ -287,12 +311,14 @@ Options:
 Iterates every maintained pack-X.Y.0 / library-X.Y.0 branch on the template
 remote and bumps the \`sandstone\` dep:
 
-  - LATEST minor (highest X.Y across all maintained template branches) →
-    \`^<workspace-sandstone-version>\` (the live master version).
+  - LIVE minor (the X.Y that npm \`@latest\` is on) →
+    \`^<@latest version>\` (e.g. \`^1.2.8\`). There is no per-minor dist-tag
+    for the live minor — \`@latest\` is its channel.
   - Every other minor → per-minor dist-tag \`sandstone-{X}-{Y}\` resolved
-    to the actual published version (e.g. \`^1.1.5\`) so bun.lock pins a
-    real SemVer. Branches whose per-minor tag hasn't been published yet
-    are skipped with a warning.
+    to the actual published version (e.g. \`^1.1.5\`). If the tag isn't
+    published, the highest \`X.Y.*\` stable version on npm is used as a
+    fallback. Branches with no published version for that minor are
+    skipped with a warning.
 
 Refreshes bun.lock, commits "⬆️ Update Sandstone" + pushes.`)
 }
@@ -310,10 +336,6 @@ async function main(): Promise<void> {
 	}
 	if (!(await fileExists(templateDir))) {
 		console.error('Error: sandstone-template not found. Run `bun run setup` first.')
-		process.exit(1)
-	}
-	if (!(await fileExists(sandstoneDir))) {
-		console.error('Error: sandstone not found. Run `bun run setup` first.')
 		process.exit(1)
 	}
 
@@ -335,26 +357,20 @@ async function main(): Promise<void> {
 		console.log(`Currently on: ${originalBranch} (will restore after changes)\n`)
 	}
 
-	const workspaceVersion = await getWorkspaceSandstoneVersion()
+	const npm = await fetchSandstoneNpm()
 	const branches = await listMaintainedTemplateBranches()
 	if (branches.length === 0) {
 		console.error('Error: no maintained template branches found.')
 		process.exit(1)
 	}
 
-	const latestMinor = highestMinor(branches)
-	if (latestMinor === null) {
-		console.error('Error: could not determine latest minor from template branches.')
-		process.exit(1)
-	}
-
-	console.log(`Workspace sandstone version: ${workspaceVersion}`)
-	console.log(`Latest minor template: ${latestMinor} (uses workspace version)`)
+	console.log(`npm @latest sandstone: ${npm.latestVersion} (live minor ${npm.latestMinor})`)
 	console.log(`Maintained template branches (${branches.length}):`)
 	for (const b of branches) {
 		const parsed = parseMinor(b)
-		const tag = parsed ? `sandstone-${parsed.major}-${parsed.minor}` : '?'
-		const channel = parsed?.minorKey === latestMinor ? 'workspace' : tag
+		const channel = parsed?.minorKey === npm.latestMinor
+			? 'latest'
+			: parsed ? `sandstone-${parsed.major}-${parsed.minor}` : '?'
 		console.log(`  - ${b}  [${channel}]`)
 	}
 
@@ -370,8 +386,8 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Resolve per-minor dist-tag versions up-front so a missing tag doesn't
-	// waste a checkout — and the dry-run summary stays accurate.
+	// Resolve target versions up-front so a missing tag doesn't waste a
+	// checkout — and the dry-run summary stays accurate.
 	interface ResolvedBranch {
 		branch: string
 		targetVersion: string
@@ -383,18 +399,17 @@ async function main(): Promise<void> {
 	for (const branch of branches) {
 		const parsed = parseMinor(branch)
 		if (!parsed) continue
-		const isLatest = parsed.minorKey === latestMinor
-		if (isLatest) {
-			resolved.push({ branch, targetVersion: `^${workspaceVersion}`, via: 'workspace', skipped: false })
+		if (parsed.minorKey === npm.latestMinor) {
+			resolved.push({ branch, targetVersion: `^${npm.latestVersion}`, via: 'latest', skipped: false })
 			continue
 		}
 		const tag = `sandstone-${parsed.major}-${parsed.minor}`
-		const published = await resolveDistTag('sandstone', tag)
-		if (published === null) {
-			resolved.push({ branch, targetVersion: '', via: `dist-tag:${tag}`, skipped: true, skippedReason: `${tag} not published yet` })
+		const found = npm.resolveForMinor(parsed.major, parsed.minor)
+		if (found === null) {
+			resolved.push({ branch, targetVersion: '', via: `dist-tag:${tag}`, skipped: true, skippedReason: `no published version for ${parsed.minorKey}` })
 			continue
 		}
-		resolved.push({ branch, targetVersion: `^${published}`, via: `dist-tag:${tag}`, skipped: false })
+		resolved.push({ branch, targetVersion: `^${found.version}`, via: found.via === 'dist-tag' ? `dist-tag:${tag}` : 'fallback', skipped: false })
 	}
 
 	const results: BranchResult[] = []
