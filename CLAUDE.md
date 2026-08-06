@@ -164,6 +164,8 @@ command runs to completion before the next:
 cd /var/home/mulverine/Workspaces/sandstone-work/sandstone && bun dev:build --silent && cd ../sandstone-template && bun dev:build
 ```
 
+**`--silent` produces zero output on success.** No "Build completed" line, no summary, nothing. An empty result is the success signal. If you only see `$ bun run scripts/build.ts --silent` and a prompt, the build passed. Run without `--silent` to see the full pipeline log.
+
 The `--silent` flag is for `sandstone`'s build (matches what the
 project's own CLAUDE.md in `sandstone/` recommends); the template build
 runs without it because its build output is useful to see (visitor
