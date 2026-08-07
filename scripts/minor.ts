@@ -310,7 +310,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log('')
-	console.log('Ready. CLI / generator / hot-hook / libraries stay on master (independent).')
+	console.log('Ready. CLI / generator / libraries stay on master (independent).')
 }
 
 main().catch((err: Error) => {

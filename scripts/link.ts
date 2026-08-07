@@ -123,7 +123,6 @@ function getDirs() {
     sandstoneDir: join(rootDir, 'sandstone'),
     cliDir: join(rootDir, 'sandstone-cli'),
     templateDir: join(rootDir, 'sandstone-template'),
-    hotHookDir: join(rootDir, 'hot-hook', 'packages', 'hot_hook'),
     mcdocTsGenDir: join(rootDir, 'mcdoc-ts-generator'),
   }
 }
@@ -139,7 +138,6 @@ async function getLinkState() {
 
   const sandstoneMcdocLinked = isLinked(sandstonePkg.devDependencies?.['@sandstone-mc/mcdoc-ts-generator'])
   const cliSandstoneLinked = isLinked(cliPkg.devDependencies?.sandstone)
-  const cliHotHookLinked = isLinked(cliPkg.dependencies?.['@sandstone-mc/hot-hook'])
   const templateSandstoneLinked = isLinked(templatePkg.dependencies?.sandstone)
   const templateCliLinked = isLinked(templatePkg.devDependencies?.['sandstone-cli'])
 
@@ -149,18 +147,17 @@ async function getLinkState() {
     templatePkg,
     sandstoneMcdocLinked,
     cliSandstoneLinked,
-    cliHotHookLinked,
     templateSandstoneLinked,
     templateCliLinked,
-    cliLinked: cliSandstoneLinked || cliHotHookLinked,
+    cliLinked: cliSandstoneLinked,
     templateLinked: templateSandstoneLinked || templateCliLinked,
   }
 }
 
 async function link() {
-  const { sandstoneDir, cliDir, templateDir, hotHookDir, mcdocTsGenDir } = getDirs()
+  const { sandstoneDir, cliDir, templateDir, mcdocTsGenDir } = getDirs()
   const state = await getLinkState()
-  const { sandstoneMcdocLinked, cliSandstoneLinked, cliHotHookLinked, cliLinked, templateLinked } = state
+  const { sandstoneMcdocLinked, cliSandstoneLinked, cliLinked, templateLinked } = state
 
   if (cliLinked && templateLinked && sandstoneMcdocLinked) {
     console.log('Packages are already linked.')
@@ -173,7 +170,6 @@ async function link() {
   const builds: Array<{ dir: string; outDir: string; label: string; cmd: string }> = [
     { dir: sandstoneDir, outDir: 'dist', label: 'sandstone', cmd: 'bun dev:build' },
     { dir: cliDir, outDir: 'lib', label: 'sandstone-cli', cmd: 'bun dev:build' },
-    { dir: hotHookDir, outDir: 'build', label: 'hot-hook', cmd: 'bun run build' },
     { dir: mcdocTsGenDir, outDir: 'dist', label: 'mcdoc-ts-generator', cmd: 'bun dev:build' },
   ]
 
@@ -203,10 +199,6 @@ async function link() {
     console.log('\nLinking sandstone into sandstone-cli...')
     await $`bun link sandstone --save`.cwd(cliDir)
   }
-  if (!cliHotHookLinked) {
-    console.log('\nLinking hot-hook into sandstone-cli...')
-    await $`bun link @sandstone-mc/hot-hook --save`.cwd(cliDir)
-  }
 
   if (!state.templateSandstoneLinked || !state.templateCliLinked) {
     console.log('\nLinking packages into sandstone-template...')
@@ -224,9 +216,9 @@ async function link() {
 }
 
 async function unlink() {
-  const { sandstoneDir, cliDir, templateDir, hotHookDir, mcdocTsGenDir } = getDirs()
+  const { sandstoneDir, cliDir, templateDir, mcdocTsGenDir } = getDirs()
   const state = await getLinkState()
-  const { sandstonePkg, cliPkg, templatePkg, sandstoneMcdocLinked, cliSandstoneLinked, cliHotHookLinked, cliLinked, templateLinked, templateSandstoneLinked, templateCliLinked } = state
+  const { sandstonePkg, cliPkg, templatePkg, sandstoneMcdocLinked, cliSandstoneLinked, cliLinked, templateLinked, templateSandstoneLinked, templateCliLinked } = state
 
   if (!cliLinked && !templateLinked && !sandstoneMcdocLinked) {
     console.log('Packages are already unlinked.')
@@ -239,7 +231,6 @@ async function unlink() {
   for (const [label, dir] of [
     ['sandstone', sandstoneDir],
     ['sandstone-cli', cliDir],
-    ['hot-hook', hotHookDir],
     ['mcdoc-ts-generator', mcdocTsGenDir],
   ] as const) {
     console.log(`Unregistering ${label}...`)
@@ -248,15 +239,13 @@ async function unlink() {
 
   // Fetch restore versions from npm (branch-aware: master → latest, v*.x → per-minor dist-tag)
   console.log('\nFetching versions from npm (channel depends on current branch)...')
-  const [sandstoneVersion, cliVersion, hotHookVersion, mcdocTsGenVersion] = await Promise.all([
+  const [sandstoneVersion, cliVersion, mcdocTsGenVersion] = await Promise.all([
     getRestoreVersion(sandstoneDir, 'sandstone'),
     getRestoreVersion(cliDir, 'sandstone-cli'),
-    getRestoreVersion(hotHookDir, '@sandstone-mc/hot-hook'),
     getRestoreVersion(mcdocTsGenDir, '@sandstone-mc/mcdoc-ts-generator')
   ])
   console.log(`  sandstone: ${sandstoneVersion}`)
   console.log(`  sandstone-cli: ${cliVersion}`)
-  console.log(`  @sandstone-mc/hot-hook: ${hotHookVersion}`)
   console.log(`  @sandstone-mc/mcdoc-ts-generator: ${mcdocTsGenVersion}`)
 
   // Restore sandstone
@@ -274,10 +263,6 @@ async function unlink() {
     if (cliSandstoneLinked) {
       cliPkg.devDependencies!.sandstone = sandstoneVersion
       await deleteNodeModule(cliDir, 'sandstone')
-    }
-    if (cliHotHookLinked) {
-      cliPkg.dependencies!['@sandstone-mc/hot-hook'] = hotHookVersion
-      await deleteNodeModule(cliDir, '@sandstone-mc/hot-hook')
     }
     await writePackageJson(cliDir, cliPkg)
     await $`bun install`.cwd(cliDir)

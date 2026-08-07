@@ -19,7 +19,6 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 | `sandstone` | `sandstone/` | Core library for datapacks/resource packs | bun |
 | `mcdoc-ts-generator` | `mcdoc-ts-generator/` | Generates TypeScript types from Minecraft mcdoc schemas | bun |
 | `cli` | `sandstone-cli/` | CLI tool (`sand`, `create-sandstone` commands) | bun |
-| `hot-hook` | `hot-hook/` | Fork of hot-hook with Bun support for HMR during dev | bun |
 | `documentation` | `sandstone-documentation/` | Docusaurus documentation site (migrating to bun) | npm |
 | `libraries` | `sandstone-libraries/` | Official add-on libraries (migrating to bun) | pnpm |
 | `playground` | `sandstone-playground/` | Browser-based interactive playground | bun |
@@ -68,7 +67,7 @@ Template branches are always `pack-X.Y.0` or `library-X.Y.0` (one branch per min
 
 ### `bun dev:minor` — Switch Minor Version
 
-Switch sandstone + template to a different minor (current master or an archived `v{X}.x` branch). CLI / generator / hot-hook / libraries stay on master regardless.
+Switch sandstone + template to a different minor (current master or an archived `v{X}.x` branch). CLI / generator / libraries stay on master regardless.
 
 ```bash
 bun dev:minor                # Interactive: pick a minor
@@ -128,7 +127,6 @@ bun dev:unlink    # Restore npm versions (branch-aware: master → latest, v{X}.
 ```
 mcdoc-ts-generator → sandstone (devDependency)
 sandstone → sandstone-cli (devDependency)
-hot-hook → sandstone-cli (dependency)
 sandstone + sandstone-cli → sandstone-template (dependencies)
 ```
 
@@ -235,7 +233,6 @@ When Minecraft updates, regenerate types before updating the core library.
 - `sandstone` → npm `sandstone`
 - `sandstone-cli` → npm `sandstone-cli`
 - `mcdoc-ts-generator` → npm `@sandstone-mc/mcdoc-ts-generator`
-- `hot-hook` → npm `@sandstone-mc/hot-hook`
 - `sandstone-playground` → npm `@sandstone-mc/playground`
 - `sandstone-libraries/*` → npm `@sandstone/*`
 

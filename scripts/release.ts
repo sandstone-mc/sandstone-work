@@ -38,7 +38,6 @@ const PACKAGES: Record<string, PackageConfig> = {
     sandstone: { dir: 'sandstone' },
     cli: { dir: 'sandstone-cli' },
     mcdoc: { dir: 'mcdoc-ts-generator' },
-    'hot-hook': { dir: 'hot-hook', versionPath: 'packages/hot_hook/package.json' },
     playground: { dir: 'sandstone-playground' },
 }
 
