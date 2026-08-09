@@ -102,7 +102,7 @@ Sandstone `1.{minor}.*` ↔ MC `(26 + floor(minor/4)).((minor % 4) + 1)`:
 - `1.5.x` → MC 27.2
 - … (4 MC bases per year)
 
-Implemented inline in `scripts/sandstoneToMC.ts` (workspace) and `sandstone-cli/src/utils/sandstoneToMC.ts` (CLI). Major 2 is out of scope and will be added when shipped.
+Implemented inline in `scripts/sandstoneToMC.ts` (workspace) and `sandstone-cli/src/utils/index.ts` (CLI). Major 2 is out of scope and will be added when shipped.
 
 ### Patch Auto-Increment + Minor Decision
 
