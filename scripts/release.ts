@@ -321,7 +321,18 @@ async function updateTemplateReadme(newMinor: string, prevMinor: string) {
 
     await Bun.write(readmePath, updated)
 
-    await $`git -C ${templateDir} add -A`.quiet().nothrow()
+    // Stage ONLY the README — never `git add -A`. The template repo can have
+    // stray working-tree changes (e.g. node_modules if .gitignore is missing
+    // on a branch) that we must not leak into this commit.
+    const status = await $`git -C ${templateDir} status --porcelain -- README.md`.quiet().text()
+    if (!status.trim()) {
+        console.log('ℹ️  No README.md changes to commit; skipping')
+        if (originalBranch && originalBranch !== 'main') {
+            await $`git -C ${templateDir} checkout ${originalBranch}`.quiet().nothrow()
+        }
+        return
+    }
+    await $`git -C ${templateDir} add -- README.md`.quiet().nothrow()
     const commit = await $`git -C ${templateDir} commit -m ${`⬆️ Add ${newMinor}.0 templates to README`}`.quiet().nothrow()
     if (commit.exitCode !== 0) {
         console.log(`⚠️  Template README commit failed: ${commit.stderr.toString().trim()}`)
