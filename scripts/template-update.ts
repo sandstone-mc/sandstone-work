@@ -18,7 +18,9 @@
  *
  * Branches with no changes are skipped (no CWD mutation). After the loop,
  * the template repo is restored to the branch the user was on when the
- * script started — but only if work was done.
+ * script started — but only if work was done. After restoring, the script
+ * wipes node_modules and runs the template's own `bun run setup` (= `bun
+ * link && bun i`) against the restored branch.
  *
  * Commit message is dynamic:
  *   - both deps changed   → "⬆️ Update Sandstone + CLI"
@@ -437,6 +439,24 @@ async function restoreTemplateBranch(originalBranch: string | null, didWork: boo
 		} else {
 			console.log(`  ⚠ git pull failed: ${pullResult.stderr.toString().trim()}`)
 			console.log(`  You may need to merge or rebase manually.`)
+			return
+		}
+
+		// Wipe node_modules so `bun run setup` (= `bun link && bun i`) gets
+		// a clean install against the restored branch's deps. `test/node_modules`
+		// only exists on library branches (workspaces create it during setup).
+		console.log(`  ↻ clearing node_modules…`)
+		await $`rm -rf ${join(templateDir, 'node_modules')}`.quiet().nothrow()
+		const testNodeModules = join(templateDir, 'test', 'node_modules')
+		if (await pathExists(testNodeModules)) {
+			await $`rm -rf ${testNodeModules}`.quiet().nothrow()
+		}
+		console.log(`  ↻ bun run setup…`)
+		const setupResult = await $`bun run setup`.cwd(templateDir).nothrow()
+		if (setupResult.exitCode === 0) {
+			console.log(`  ✅ setup complete`)
+		} else {
+			console.log(`  ⚠ bun run setup failed: ${setupResult.stderr.toString().trim() || setupResult.stdout.toString().trim()}`)
 		}
 	} else {
 		console.log(`  ⚠ git checkout failed: ${result.stderr.toString().trim()}`)
