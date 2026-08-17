@@ -23,8 +23,7 @@
     "dev:build:library": "cd sandstone && bun dev:build",
     "dev:build:template": "cd sandstone-template && bun dev:build",
     "release": "bun run scripts/release.ts",
-    "template:cli-update": "bun run scripts/template-cli-update.ts",
-    "template:sandstone-update": "bun run scripts/template-sandstone-update.ts"
+    "template:update": "bun run scripts/template-update.ts"
   },
   "type": "module"
 }

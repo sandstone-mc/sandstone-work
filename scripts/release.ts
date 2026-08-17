@@ -610,7 +610,7 @@ async function release(packageName: string, pkg: PackageConfig, title: string, b
     if (packageName === 'cli') {
         console.log('')
         console.log(`💡 Don't forget to bump the CLI in maintained template branches:`)
-        console.log(`   bun template:cli-update`)
+        console.log(`   bun template:update`)
     }
 
     // For sandstone minor releases: create archival branch + template branches.
