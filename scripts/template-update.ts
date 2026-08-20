@@ -507,7 +507,8 @@ async function main(): Promise<void> {
 	console.log(`Maintained template branches (${branches.length}):`)
 	for (const b of branches) {
 		const ss = resolveSandstoneForMinor(npm, b)
-		console.log(`  - ${b}  [sandstone: ${ss.via}${ss.skipReason ? ` (skip: ${ss.skipReason})` : ''}, cli: ${cliVersion}]`)
+		const ssLabel = ss.target ? `${ss.target} (via ${ss.via})` : `${ss.via}${ss.skipReason ? ` (skip: ${ss.skipReason})` : ''}`
+		console.log(`  - ${b}  [sandstone: ${ssLabel}, cli: ${cliVersion}]`)
 	}
 
 	if (!dryRun) {
