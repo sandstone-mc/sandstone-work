@@ -51,7 +51,7 @@ interface FileChange {
 
 interface BranchPlan {
 	branch: string
-	sandstoneTarget: string // "^1.2.8" — empty if branch should be skipped for sandstone
+	sandstoneTarget: string // "~1.2.8" — empty if branch should be skipped for sandstone
 	sandstoneVia: string
 	sandstoneSkipReason?: string
 	cliTarget: string // "^2.6.2"
@@ -172,12 +172,12 @@ function resolveSandstoneForMinor(npm: NpmSandstone, branch: string): SandstoneT
 		return { target: '', via: '?', skipReason: 'unparseable branch name' }
 	}
 	if (parsed.minorKey === npm.latestMinor) {
-		return { target: `^${npm.latestVersion}`, via: 'latest' }
+		return { target: `~${npm.latestVersion}`, via: 'latest' }
 	}
 	const tag = `sandstone-${parsed.major}-${parsed.minor}`
 	const tagged = npm.distTags[tag]
 	if (tagged) {
-		return { target: `^${tagged}`, via: `dist-tag:${tag}` }
+		return { target: `~${tagged}`, via: `dist-tag:${tag}` }
 	}
 	// Fallback: highest published X.Y.* stable version (prereleases would
 	// surprise users on `bun install`).
@@ -190,7 +190,7 @@ function resolveSandstoneForMinor(npm: NpmSandstone, branch: string): SandstoneT
 	if (patches.length === 0) {
 		return { target: '', via: `dist-tag:${tag}`, skipReason: `no published version for ${parsed.minorKey}` }
 	}
-	return { target: `^${parsed.major}.${parsed.minor}.${patches[0]}`, via: 'fallback' }
+	return { target: `~${parsed.major}.${parsed.minor}.${patches[0]}`, via: 'fallback' }
 }
 
 async function getWorkspaceCliVersion(): Promise<string> {
