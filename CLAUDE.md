@@ -84,11 +84,17 @@ Just checks out + bun-installs; doesn't build or link. Run `bun dev:link` separa
 | Branch | npm dist-tag | Resolves to |
 |--------|--------------|-------------|
 | `master` (sandstone) | `latest` | Highest master version |
-| `v1.0.x` (sandstone) | `v1.0` | Highest 1.0.x patch |
-| `v1.1.x` (sandstone) | `v1.1` | Highest 1.1.x patch |
-| future `v*.x` | `v{X}.{Y}` | Per-minor channel |
+| `v1.0.x` (sandstone) | `sandstone-1-0` | Highest 1.0.x patch |
+| `v1.1.x` (sandstone) | `sandstone-1-1` | Highest 1.1.x patch |
+| future `v*.x` | `sandstone-{X}-{Y}` | Per-minor channel |
+
+Per-minor dist-tag names drop the dots and prefix the unscoped package name (npm doesn't preserve `@scope/` in tag keys). `latest` stays untouched.
 
 This keeps `sandstone@latest` pristine regardless of activity on archived branches. CLI (`sandstone-cli`) and generator (`@sandstone-mc/mcdoc-ts-generator`) are minor-agnostic — they only publish to `latest`.
+
+#### Template dep range: `~`, not `^`
+
+The template branches (`pack-X.Y.0` / `library-X.Y.0`) write `~X.Y.Z` for `sandstone`, not `^X.Y.Z`. `^1.1.20` would resolve to `>=1.1.20 <2.0.0` and pull current latest (1.2.x) on a fresh install — bypassing the branch's intended minor. `~1.1.20` resolves to `>=1.1.20 <1.2.0`, keeping the install on the archived minor until the next `bun template:update` pass advances the spec. Both `scripts/template-update.ts` and `scripts/link.ts` write the `~` form.
 
 ### MC Version Correlation
 
@@ -120,7 +126,7 @@ Links local packages together for development so changes propagate without publi
 
 ```bash
 bun dev:link      # Link local packages for development
-bun dev:unlink    # Restore npm versions (branch-aware: master → latest, v{X}.x → v{X}.{Y} dist-tag)
+bun dev:unlink    # Restore npm versions (branch-aware: master → latest, v{X}.x → sandstone-X-Y dist-tag)
 ```
 
 **Link chain:**
@@ -135,7 +141,7 @@ When linked:
 - Registers packages globally with `bun link`
 - Links dependencies between packages with `bun link <package> --save`
 
-`bun dev:unlink` is **branch-aware**: when run on master it restores to npm `latest`; when run on an archived `v{X}.x` branch it restores each package to its `v{X}.{Y}` dist-tag (the per-minor channel those patches publish to). So `bun dev:link` / `bun dev:unlink` works correctly regardless of which minor branch you're on.
+`bun dev:unlink` is **branch-aware**: when run on master it restores to npm `latest`; when run on an archived `v{X}.x` branch it restores each package to its `sandstone-X-Y` dist-tag (the per-minor channel those patches publish to). So `bun dev:link` / `bun dev:unlink` works correctly regardless of which minor branch you're on.
 
 Always run `bun dev:unlink` before committing changes to any package.json files.
 
@@ -181,7 +187,7 @@ warnings, etc.).
 6. Test in `sandstone-template/` with `bun dev:build`
 7. Before committing: `bun dev:unlink` in workspace root
 
-**To iterate against an archived minor** (e.g., to patch v1.0.x): run `bun dev:minor 1.0` *before* `bun dev:link`. The link/unlink scripts are branch-aware — they restore to `sandstone@v1.0` (and friends) when checked out to that branch.
+**To iterate against an archived minor** (e.g., to patch v1.0.x): run `bun dev:minor 1.0` *before* `bun dev:link`. The link/unlink scripts are branch-aware — they restore to the `sandstone-1-0` dist-tag (and friends) when checked out to that branch.
 
 ### Iterating on the CLI
 

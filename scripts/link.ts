@@ -61,7 +61,13 @@ async function getChannelForBranch(repoDir: string, packageName: string): Promis
 
 /**
  * Fetch a version from a specific npm dist-tag for the given package.
- * Returns the version prefixed with `^` for use in package.json.
+ * Returns the version prefixed with `~` for use in package.json.
+ *
+ * `~` (not `^`) is intentional: `^1.1.20` resolves to `>=1.1.20 <2.0.0`,
+ * so a fresh install on an archived branch (e.g. v1.1.x) would pull
+ * whatever's latest in the major — currently 1.2.x. `~1.1.20` resolves to
+ * `>=1.1.20 <1.2.0`, keeping the install on the archived minor until the
+ * next template:update pass advances the spec.
  *
  * Returns null when the dist-tag is missing (e.g. a per-minor tag like
  * `sandstone-1-0` that hasn't been published yet), so the caller can
@@ -77,7 +83,7 @@ async function getNpmVersionForChannel(packageName: string, channel: string): Pr
   }
   const data = await response.json() as { 'dist-tags'?: Record<string, string> }
   const version = data['dist-tags']?.[channel]
-  return version === undefined ? null : `^${version}`
+  return version === undefined ? null : `~${version}`
 }
 
 /**
