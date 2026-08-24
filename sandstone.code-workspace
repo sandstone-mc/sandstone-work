@@ -35,6 +35,10 @@
 		{
 			"name": "demo",
 			"path": "sandstone-demo"
+		},
+		{
+			"name": "bun-test-cli-harness",
+			"path": "bun-test-cli-harness"
 		}
 	],
 	"settings": {}

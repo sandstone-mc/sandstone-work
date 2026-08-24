@@ -10,5 +10,6 @@ sandstone-libraries/
 sandstone-playground/
 sandstone-template/
 sandstone-demo/
+bun-test-cli-harness/
 
 .temp/

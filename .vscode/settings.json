@@ -10,6 +10,7 @@
     "sandstone-playground": true,
     "sandstone-template": true,
     "sandstone-demo": true,
+    "bun-test-cli-harness": true,
   },
   "editor.tabSize": 2
 }

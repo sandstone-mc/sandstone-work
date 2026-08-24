@@ -23,6 +23,7 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 | `libraries` | `sandstone-libraries/` | Official add-on libraries (migrating to bun) | pnpm |
 | `playground` | `sandstone-playground/` | Browser-based interactive playground | bun |
 | `template` | `sandstone-template/` | Starter templates (each template is a branch) | bun |
+| `bun-test-cli-harness` | `bun-test-cli-harness/` | bun:test harness for driving Inquirer prompts in-process (published on npm) | bun |
 
 All repos are under the `sandstone-mc` GitHub organization.
 
