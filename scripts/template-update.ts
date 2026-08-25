@@ -319,6 +319,15 @@ async function applyBranch(
 		console.log(`  ↻ git checkout ${branch}…`)
 		await $`git -C ${templateDir} checkout ${branch}`.quiet().nothrow()
 
+		// Pull after checkout so the local tracking ref matches origin/<branch>.
+		// Without this, push would fail with non-ff when the branch has moved
+		// on the remote since our initial `git fetch` at script start.
+		console.log(`  ↻ git pull…`)
+		const pullAtCheckout = await $`git -C ${templateDir} pull --ff-only`.quiet().nothrow()
+		if (pullAtCheckout.exitCode !== 0) {
+			return { committed: false, error: `pull after checkout failed: ${pullAtCheckout.stderr.toString().trim()}` }
+		}
+
 		const rootPkgPath = join(templateDir, 'package.json')
 		const testPkgPath = join(templateDir, 'test', 'package.json')
 
