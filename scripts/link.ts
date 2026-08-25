@@ -7,7 +7,7 @@
  */
 
 import { $ } from 'bun'
-import { access, rm } from 'fs/promises'
+import { access, lstat, rm, symlink } from 'fs/promises'
 import { join } from 'path'
 
 const rootDir = join(import.meta.dir, '..')
@@ -60,20 +60,43 @@ async function getChannelForBranch(repoDir: string, packageName: string): Promis
 }
 
 /**
- * Fetch a version from a specific npm dist-tag for the given package.
- * Returns the version prefixed with `~` for use in package.json.
+ * Ensure a `patches/` symlink exists in the consumer directory, pointing at
+ * the patched package's `patches/` directory.
  *
- * `~` (not `^`) is intentional: `^1.1.20` resolves to `>=1.1.20 <2.0.0`,
- * so a fresh install on an archived branch (e.g. v1.1.x) would pull
- * whatever's latest in the major — currently 1.2.x. `~1.1.20` resolves to
- * `>=1.1.20 <1.2.0`, keeping the install on the archived minor until the
- * next template:update pass advances the spec.
+ * Bun resolves `patchedDependencies` paths relative to the install cwd, not
+ * the patched package's root. When linking sandstone into a consumer (cli /
+ * template), `bun link sandstone --save` runs from the consumer cwd, so
+ * `patches/...` resolves there. A symlink makes those paths findable without
+ * duplicating files. Idempotent: leaves an existing `patches/` entry alone.
+ */
+async function ensurePatchesSymlink(consumerDir: string, patchesTarget: string): Promise<void> {
+  const linkPath = join(consumerDir, 'patches')
+  try {
+    await lstat(linkPath)
+    return
+  } catch {
+    // not present
+  }
+  await symlink(patchesTarget, linkPath)
+  console.log(`Linked ${linkPath} -> ${patchesTarget}`)
+}
+
+/**
+ * Fetch a version from a specific npm dist-tag for the given package.
+ * Returns the version prefixed with the given range operator for use in package.json.
+ *
+ * `~` (not `^`) is intentional for `sandstone` in the template/demo:
+ * `^1.1.20` resolves to `>=1.1.20 <2.0.0`, so a fresh install on an archived
+ * branch (e.g. v1.1.x) would pull whatever's latest in the major — currently
+ * 1.2.x. `~1.1.20` resolves to `>=1.1.20 <1.2.0`, keeping the install on the
+ * archived minor until the next template:update pass advances the spec.
+ * Everything else (cli, mcdoc-ts-generator, etc.) gets `^`.
  *
  * Returns null when the dist-tag is missing (e.g. a per-minor tag like
  * `sandstone-1-0` that hasn't been published yet), so the caller can
  * fall back to `latest` instead of erroring.
  */
-async function getNpmVersionForChannel(packageName: string, channel: string): Promise<string | null> {
+async function getNpmVersionForChannel(packageName: string, channel: string, prefix: '~' | '^' = '^'): Promise<string | null> {
   // The shortcut endpoint `/-/v1/tags/<tag>/package/<pkg>` returns 404
   // even for tags that exist on the registry, so look up the package
   // directly and pull the dist-tags map.
@@ -83,20 +106,21 @@ async function getNpmVersionForChannel(packageName: string, channel: string): Pr
   }
   const data = await response.json() as { 'dist-tags'?: Record<string, string> }
   const version = data['dist-tags']?.[channel]
-  return version === undefined ? null : `~${version}`
+  return version === undefined ? null : `${prefix}${version}`
 }
 
 /**
  * Restore a package.json dep to the version published on the channel that
  * matches the current git branch of that repo (master → latest, v*.x →
  * per-minor dist-tag). Falls back to `latest` if the per-minor tag hasn't
- * been published yet.
+ * been published yet. `prefix` controls the SemVer range operator (`^` by
+ * default, `~` for the `sandstone` dep in the template/demo).
  */
-async function getRestoreVersion(repoDir: string, packageName: string): Promise<string> {
+async function getRestoreVersion(repoDir: string, packageName: string, prefix: '~' | '^' = '^'): Promise<string> {
   const channel = await getChannelForBranch(repoDir, packageName)
-  const versioned = await getNpmVersionForChannel(packageName, channel)
+  const versioned = await getNpmVersionForChannel(packageName, channel, prefix)
   if (versioned !== null) return versioned
-  const fallback = await getNpmVersionForChannel(packageName, 'latest')
+  const fallback = await getNpmVersionForChannel(packageName, 'latest', prefix)
   if (fallback === null) {
     throw new Error(`Neither '${channel}' nor 'latest' dist-tag exists for ${packageName}`)
   }
@@ -129,34 +153,40 @@ function getDirs() {
     sandstoneDir: join(rootDir, 'sandstone'),
     cliDir: join(rootDir, 'sandstone-cli'),
     templateDir: join(rootDir, 'sandstone-template'),
+    demoDir: join(rootDir, 'sandstone-demo'),
     mcdocTsGenDir: join(rootDir, 'mcdoc-ts-generator'),
   }
 }
 
 async function getLinkState() {
-  const { sandstoneDir, cliDir, templateDir } = getDirs()
+  const { sandstoneDir, cliDir, templateDir, demoDir } = getDirs()
 
-  const [sandstonePkg, cliPkg, templatePkg] = await Promise.all([
+  const [sandstonePkg, cliPkg, templatePkg, demoPkg] = await Promise.all([
     readPackageJson(sandstoneDir),
     readPackageJson(cliDir),
     readPackageJson(templateDir),
+    readPackageJson(demoDir),
   ])
 
   const sandstoneMcdocLinked = isLinked(sandstonePkg.devDependencies?.['@sandstone-mc/mcdoc-ts-generator'])
   const cliSandstoneLinked = isLinked(cliPkg.devDependencies?.sandstone)
   const templateSandstoneLinked = isLinked(templatePkg.dependencies?.sandstone)
   const templateCliLinked = isLinked(templatePkg.devDependencies?.['sandstone-cli'])
+  const demoSandstoneLinked = isLinked(demoPkg.dependencies?.sandstone)
 
   return {
     sandstonePkg,
     cliPkg,
     templatePkg,
+    demoPkg,
     sandstoneMcdocLinked,
     cliSandstoneLinked,
     templateSandstoneLinked,
     templateCliLinked,
+    demoSandstoneLinked,
     cliLinked: cliSandstoneLinked,
     templateLinked: templateSandstoneLinked || templateCliLinked,
+    demoLinked: demoSandstoneLinked,
   }
 }
 
@@ -203,12 +233,16 @@ async function link() {
 
   if (!cliSandstoneLinked) {
     console.log('\nLinking sandstone into sandstone-cli...')
+    await ensurePatchesSymlink(cliDir, '../sandstone/patches')
     await $`bun link sandstone --save`.cwd(cliDir)
   }
 
   if (!state.templateSandstoneLinked || !state.templateCliLinked) {
     console.log('\nLinking packages into sandstone-template...')
-    if (!state.templateSandstoneLinked) await $`bun link sandstone --save`.cwd(templateDir)
+    if (!state.templateSandstoneLinked) {
+      await ensurePatchesSymlink(templateDir, '../sandstone/patches')
+      await $`bun link sandstone --save`.cwd(templateDir)
+    }
     if (!state.templateCliLinked) await $`bun link sandstone-cli --save`.cwd(templateDir)
   }
 
@@ -222,11 +256,11 @@ async function link() {
 }
 
 async function unlink() {
-  const { sandstoneDir, cliDir, templateDir, mcdocTsGenDir } = getDirs()
+  const { sandstoneDir, cliDir, templateDir, demoDir, mcdocTsGenDir } = getDirs()
   const state = await getLinkState()
-  const { sandstonePkg, cliPkg, templatePkg, sandstoneMcdocLinked, cliSandstoneLinked, cliLinked, templateLinked, templateSandstoneLinked, templateCliLinked } = state
+  const { sandstonePkg, cliPkg, templatePkg, demoPkg, sandstoneMcdocLinked, cliSandstoneLinked, cliLinked, templateLinked, templateSandstoneLinked, templateCliLinked, demoLinked, demoSandstoneLinked } = state
 
-  if (!cliLinked && !templateLinked && !sandstoneMcdocLinked) {
+  if (!cliLinked && !templateLinked && !sandstoneMcdocLinked && !demoLinked) {
     console.log('Packages are already unlinked.')
     return
   }
@@ -243,15 +277,21 @@ async function unlink() {
     await $`bun unlink`.cwd(dir).nothrow()
   }
 
-  // Fetch restore versions from npm (branch-aware: master → latest, v*.x → per-minor dist-tag)
+  // Fetch restore versions from npm (branch-aware: master → latest, v*.x → per-minor dist-tag).
+  // `~` only for `sandstone` in the template/demo (keeps archived-minor installs on the
+  // archived minor). Everything else gets `^`.
   console.log('\nFetching versions from npm (channel depends on current branch)...')
-  const [sandstoneVersion, cliVersion, mcdocTsGenVersion] = await Promise.all([
-    getRestoreVersion(sandstoneDir, 'sandstone'),
-    getRestoreVersion(cliDir, 'sandstone-cli'),
-    getRestoreVersion(mcdocTsGenDir, '@sandstone-mc/mcdoc-ts-generator')
+  const [sandstoneVersionForCli, sandstoneVersionForTemplate, sandstoneVersionForDemo, cliVersion, mcdocTsGenVersion] = await Promise.all([
+    getRestoreVersion(sandstoneDir, 'sandstone', '^'),
+    getRestoreVersion(sandstoneDir, 'sandstone', '~'),
+    getRestoreVersion(sandstoneDir, 'sandstone', '~'),
+    getRestoreVersion(cliDir, 'sandstone-cli', '^'),
+    getRestoreVersion(mcdocTsGenDir, '@sandstone-mc/mcdoc-ts-generator', '^')
   ])
-  console.log(`  sandstone: ${sandstoneVersion}`)
-  console.log(`  sandstone-cli: ${cliVersion}`)
+  console.log(`  sandstone (cli):       ${sandstoneVersionForCli}`)
+  console.log(`  sandstone (template):  ${sandstoneVersionForTemplate}`)
+  console.log(`  sandstone (demo):      ${sandstoneVersionForDemo}`)
+  console.log(`  sandstone-cli:         ${cliVersion}`)
   console.log(`  @sandstone-mc/mcdoc-ts-generator: ${mcdocTsGenVersion}`)
 
   // Restore sandstone
@@ -267,7 +307,7 @@ async function unlink() {
   if (cliLinked) {
     console.log('\nRestoring sandstone-cli...')
     if (cliSandstoneLinked) {
-      cliPkg.devDependencies!.sandstone = sandstoneVersion
+      cliPkg.devDependencies!.sandstone = sandstoneVersionForCli
       await deleteNodeModule(cliDir, 'sandstone')
     }
     await writePackageJson(cliDir, cliPkg)
@@ -278,7 +318,7 @@ async function unlink() {
   if (templateLinked) {
     console.log('\nRestoring sandstone-template...')
     if (templateSandstoneLinked) {
-      templatePkg.dependencies!.sandstone = sandstoneVersion
+      templatePkg.dependencies!.sandstone = sandstoneVersionForTemplate
       await deleteNodeModule(templateDir, 'sandstone')
     }
     if (templateCliLinked) {
@@ -287,6 +327,17 @@ async function unlink() {
     }
     await writePackageJson(templateDir, templatePkg)
     await $`bun install`.cwd(templateDir)
+  }
+
+  // Restore sandstone-demo
+  if (demoLinked) {
+    console.log('\nRestoring sandstone-demo...')
+    if (demoSandstoneLinked) {
+      demoPkg.dependencies!.sandstone = sandstoneVersionForDemo
+      await deleteNodeModule(demoDir, 'sandstone')
+    }
+    await writePackageJson(demoDir, demoPkg)
+    await $`bun install`.cwd(demoDir)
   }
 
   console.log('\nAll packages restored to npm versions!')

@@ -4,7 +4,10 @@ Multi-package monorepo for the Sandstone ecosystem — a TypeScript library for 
 
 ## Agent Rules
 1. Before launching an "Explore" process with sub-agent(s) and lots of token intake, get manual confirmation from the user that they want you to do that.
-2. Be mindful of your CWD and form your `cd` calls accordingly
+2. **Always manage `cd` before running project scripts.** Each project (`sandstone/`, `sandstone-cli/`, `mcdoc-ts-generator/`, `sandstone-template/`, `sandstone-documentation/`, `sandstone-libraries/`, `sandstone-playground/`, `bun-test-cli-harness/`) has its own `package.json` and its own scripts. The Bash tool does not auto-`cd`, so the working directory of each command is whatever the previous command left it as. Concrete consequences:
+   - Before running a project's `bun dev:build`, `bun dev:watch`, `bun test`, `npm start`, etc., `cd` into that project first.
+   - When you need to run scripts in **multiple** projects in a single turn (e.g. rebuild `sandstone` then rebuild `sandstone-cli` because the CLI imports the rebuilt types), `cd` explicitly between them. Do **not** chain with `&& bun …` alone — the second `bun …` will run inside the first project's directory, not the second.
+   - The correct chained form is: `cd <project-A> && bun <a> && cd <project-B> && bun <b>`. Or run them as separate Bash tool calls.
 3. If you are getting errors from an IDE MCP Diagnostics call and they don't make any sense (or should have been fixed by changes you made), dont revert changes, just ask the user to restart the offending language server.
 4. When the user has an IDE connected to you, always pay attention to what file they have open and what text they have selected.
 5. Do not use `timeout` parameter in your Bash MCP, its buggy and breaks stuff. Let the user build if needed.
@@ -145,6 +148,14 @@ When linked:
 `bun dev:unlink` is **branch-aware**: when run on master it restores to npm `latest`; when run on an archived `v{X}.x` branch it restores each package to its `sandstone-X-Y` dist-tag (the per-minor channel those patches publish to). So `bun dev:link` / `bun dev:unlink` works correctly regardless of which minor branch you're on.
 
 Always run `bun dev:unlink` before committing changes to any package.json files.
+
+#### Bun `patchedDependencies` cwd quirk
+
+Bun resolves paths in `patchedDependencies` relative to the **install cwd**, not the patched package's root. When `bun dev:link` runs `bun link sandstone --save` from inside `sandstone-cli/` (or `sandstone-template/`), bun looks for `patches/...` in the consumer's cwd and fails with `Couldn't find patch file` if no `patches/` is there.
+
+`scripts/link.ts` works around this via `ensurePatchesSymlink()`: before each `bun link --save` into a consumer, it creates a `<consumer>/patches -> ../sandstone/patches` symlink (idempotent — skips if anything already exists at `patches/`). Both `sandstone-cli/.gitignore` and `sandstone-template/.gitignore` exclude `/patches` so the symlink stays local to each developer's checkout.
+
+If you see the "Couldn't find patch file" error during `bun dev:link`, the symlink is missing or broken — recreate it manually or run `bun dev:unlink && bun dev:link` (the script will re-create it).
 
 ### Build Core Library
 
