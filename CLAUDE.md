@@ -182,6 +182,8 @@ cd /var/home/mulverine/Workspaces/sandstone-work/sandstone && bun dev:build --si
 
 **`--silent` produces zero output on success.** No "Build completed" line, no summary, nothing. An empty result is the success signal. If you only see `$ bun run scripts/build.ts --silent` and a prompt, the build passed. Run without `--silent` to see the full pipeline log.
 
+**Build logging — keep noise out of your context window.** Always pipe routine template builds to `/dev/null`: `bun dev:build > /dev/null 2>&1`. Piping the stdout into a blackhole prevents it from filling your context window, all of the logging goes to the file, do not attempt to do any other piping or the harness will ask the user for permissions all the time. Only use `--debug` (followed by `grep` on `.sandstone/build-debug.log`) when you're actually investigating something specific — don't `cat` the whole file, the log is meant to be searched.
+
 The `--silent` flag is for `sandstone`'s build (matches what the
 project's own CLAUDE.md in `sandstone/` recommends); the template build
 runs without it because its build output is useful to see (visitor

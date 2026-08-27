@@ -5,7 +5,10 @@
       "Bash(bun dev:watch)",
       "Bash(bun dev:build)",
       "Bash(bun dev:build --silent)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Bash(tee *.log)",
+      "Bash(bun dev:build --debug)",
+      "mcp__minecraft-wiki__minecraft_wiki_get_page"
     ]
   }
 }
