@@ -513,6 +513,48 @@ async function interactiveMode() {
     await release(selectedPackage.name, selectedPackage.config, title, body, kind)
 }
 
+/**
+ * Detect any remaining `link:` (or `file:`) references that would cause the
+ * released package to be published out of sync with what consumers / its own
+ * dependencies actually resolve to.
+ *
+ * Scans every workspace package.json and flags:
+ *   - `link:` deps in the released package's own package.json (its own deps
+ *     would still resolve to local siblings instead of npm)
+ *   - `link:<released-pkg-name>` deps in any other workspace package.json
+ *     (consumers would still resolve to the local source rather than the
+ *     freshly-published npm version)
+ *
+ * Returns human-readable offender strings, empty if clean.
+ */
+async function findLinkedRefsForRelease(packageName: string): Promise<string[]> {
+    const offenders: string[] = []
+    const dirs = ['sandstone', 'sandstone-cli', 'mcdoc-ts-generator', 'sandstone-playground', 'sandstone-template', 'sandstone-demo']
+    for (const dir of dirs) {
+        const pkgPath = resolve(import.meta.dir, '..', dir, 'package.json')
+        let pkg: any
+        try {
+            pkg = await Bun.file(pkgPath).json()
+        } catch {
+            continue
+        }
+        for (const section of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
+            const deps = pkg[section]
+            if (!deps) continue
+            for (const [depName, depVer] of Object.entries(deps)) {
+                if (typeof depVer !== 'string') continue
+                if (!depVer.startsWith('link:') && !depVer.startsWith('file:')) continue
+                if (pkg.name === packageName) {
+                    offenders.push(`${dir}/package.json: ${section}.${depName} = ${depVer}`)
+                } else if (depName === packageName) {
+                    offenders.push(`${dir}/package.json: ${section}.${depName} = ${depVer}`)
+                }
+            }
+        }
+    }
+    return offenders
+}
+
 async function release(packageName: string, pkg: PackageConfig, title: string, body?: string, kind: ReleaseKind = 'patch') {
     const packageDir = resolve(import.meta.dir, '..', pkg.dir)
     if (!existsSync(packageDir)) {
@@ -691,6 +733,26 @@ async function cliMode(args: string[]) {
 
 async function main() {
     const args = process.argv.slice(2)
+
+    // Refuse to run at all while any package has active bun dev:link refs.
+    // Listing release candidates when the workspace is half-linked would be
+    // misleading — the user would pick a package, see all its pending commits,
+    // and only learn at the very end that the release can't proceed.
+    const linked: Record<string, string[]> = {}
+    for (const name of Object.keys(PACKAGES)) {
+        const refs = await findLinkedRefsForRelease(name)
+        if (refs.length > 0) linked[name] = refs
+    }
+    if (Object.keys(linked).length > 0) {
+        console.error(`❌ Release blocked — active bun dev:link references:`)
+        for (const [pkg, refs] of Object.entries(linked)) {
+            console.error(`   ${pkg}:`)
+            for (const ref of refs) console.error(`     ${ref}`)
+        }
+        console.error('')
+        console.error(`Run \`bun dev:unlink\` from the workspace root, then re-run.`)
+        process.exit(1)
+    }
 
     if (args.length === 0) {
         await interactiveMode()
