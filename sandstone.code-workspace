@@ -39,7 +39,13 @@
 		{
 			"name": "bun-test-cli-harness",
 			"path": "bun-test-cli-harness"
-		}
+		},
+		{
+			"name": "radon",
+			"path": "radon"
+		},
 	],
-	"settings": {}
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "interactive"
+	}
 }

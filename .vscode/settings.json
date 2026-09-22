@@ -11,6 +11,7 @@
     "sandstone-template": true,
     "sandstone-demo": true,
     "bun-test-cli-harness": true,
+    "radon": true,
   },
   "editor.tabSize": 2
 }
