@@ -8,7 +8,8 @@
       "Bash(grep *)",
       "Bash(tee *.log)",
       "Bash(bun dev:build --debug)",
-      "mcp__minecraft-wiki__minecraft_wiki_get_page"
+      "mcp__minecraft-wiki__minecraft_wiki_get_page",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }
